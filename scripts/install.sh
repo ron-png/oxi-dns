@@ -2,7 +2,7 @@
 
 # Oxi-Hole install script
 # Usage:
-#   curl -s -S -L https://raw.githubusercontent.com/ron-png/oxi-hole-resting/master/scripts/install.sh | sh -s -- [options]
+#   curl -s -S -L https://raw.githubusercontent.com/ron-png/oxi-hole/master/scripts/install.sh | sh -s -- [options]
 #
 # Options:
 #   -r  Reinstall (overwrite existing installation)
@@ -18,7 +18,7 @@ set -e
 # ============================================================================
 
 REPO_OWNER="ron-png"
-REPO_NAME="oxi-hole-resting"
+REPO_NAME="oxi-hole"
 BINARY_NAME="oxi-hole"
 INSTALL_DIR="/opt/oxi-hole"
 CONFIG_DIR="/etc/oxi-hole"
@@ -478,7 +478,7 @@ create_user() {
 create_default_config() {
     cat > "${CONFIG_DIR}/config.toml" <<'CONFIGEOF'
 # Oxi-Hole Configuration
-# See: https://github.com/ron-png/oxi-hole-resting
+# See: https://github.com/ron-png/oxi-hole
 
 [dns]
 # Plain DNS (UDP) - change to 0.0.0.0:53 for production use
