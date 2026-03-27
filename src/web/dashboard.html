@@ -1,0 +1,622 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oxi-Hole Dashboard</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+        }
+        .header {
+            background: #1e293b;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid #334155;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .header h1 { font-size: 1.5rem; color: #38bdf8; }
+        .header h1 span { color: #f97316; }
+        .header-right { display: flex; align-items: center; gap: 1rem; }
+        .mode-toggle {
+            display: flex;
+            background: #0f172a;
+            border-radius: 0.5rem;
+            overflow: hidden;
+            border: 1px solid #334155;
+        }
+        .mode-toggle button {
+            padding: 0.4rem 1rem;
+            border: none;
+            background: transparent;
+            color: #94a3b8;
+            cursor: pointer;
+            font-size: 0.85rem;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .mode-toggle button.active {
+            background: #3b82f6;
+            color: white;
+        }
+        .master-toggle {
+            padding: 0.4rem 1.2rem;
+            border: none;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: all 0.2s;
+        }
+        .master-toggle.enabled { background: #22c55e; color: white; }
+        .master-toggle.disabled { background: #ef4444; color: white; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1.5rem; }
+
+        /* Stats cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .stat-card {
+            background: #1e293b;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            border: 1px solid #334155;
+        }
+        .stat-card .label { color: #94a3b8; font-size: 0.8rem; margin-bottom: 0.35rem; }
+        .stat-card .value { font-size: 1.75rem; font-weight: 700; color: #38bdf8; }
+        .stat-card .value.blocked { color: #f97316; }
+        .stat-card .value.pct { color: #a78bfa; }
+        .stat-card .value.size { color: #34d399; }
+
+        /* Feature toggles (Simple mode) */
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+        }
+        .feature-card {
+            background: #1e293b;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            border: 1px solid #334155;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            transition: border-color 0.2s;
+        }
+        .feature-card.active { border-color: #3b82f6; }
+        .feature-icon {
+            width: 48px;
+            height: 48px;
+            border-radius: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.3rem;
+            flex-shrink: 0;
+        }
+        .feature-icon.shield { background: #172554; color: #3b82f6; }
+        .feature-icon.eye-off { background: #4c1d95; color: #a78bfa; }
+        .feature-icon.search { background: #14532d; color: #4ade80; }
+        .feature-icon.users { background: #7c2d12; color: #fb923c; }
+        .feature-icon.dice { background: #831843; color: #f472b6; }
+        .feature-icon.cpu { background: #713f12; color: #fbbf24; }
+        .feature-info { flex: 1; min-width: 0; }
+        .feature-info h3 { font-size: 0.95rem; margin-bottom: 0.2rem; color: #e2e8f0; }
+        .feature-info p { font-size: 0.78rem; color: #94a3b8; line-height: 1.3; }
+        .feature-status { font-size: 0.7rem; color: #64748b; margin-top: 0.25rem; }
+
+        /* Toggle switch */
+        .toggle-switch {
+            position: relative;
+            width: 48px;
+            height: 26px;
+            flex-shrink: 0;
+        }
+        .toggle-switch input { opacity: 0; width: 0; height: 0; }
+        .toggle-slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: #475569;
+            border-radius: 26px;
+            transition: 0.3s;
+        }
+        .toggle-slider:before {
+            content: "";
+            position: absolute;
+            height: 20px;
+            width: 20px;
+            left: 3px;
+            bottom: 3px;
+            background: white;
+            border-radius: 50%;
+            transition: 0.3s;
+        }
+        .toggle-switch input:checked + .toggle-slider { background: #3b82f6; }
+        .toggle-switch input:checked + .toggle-slider:before { transform: translateX(22px); }
+        .toggle-switch.loading .toggle-slider { opacity: 0.5; }
+
+        /* Section panels */
+        .section {
+            background: #1e293b;
+            border-radius: 0.75rem;
+            padding: 1.25rem;
+            border: 1px solid #334155;
+            margin-bottom: 1rem;
+        }
+        .section h2 {
+            font-size: 1rem;
+            color: #94a3b8;
+            margin-bottom: 0.75rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 1px solid #334155;
+        }
+        .add-domain {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+        }
+        .add-domain input {
+            flex: 1;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: #e2e8f0;
+            font-size: 0.85rem;
+        }
+        .btn {
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.85rem;
+            transition: opacity 0.2s;
+        }
+        .btn:hover { opacity: 0.85; }
+        .btn-blue { background: #3b82f6; }
+        .btn-red { background: #ef4444; }
+        .btn-green { background: #22c55e; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th, td {
+            padding: 0.6rem 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #334155;
+            font-size: 0.8rem;
+        }
+        th { color: #94a3b8; font-weight: 600; }
+        tr:hover { background: #334155; }
+        .badge {
+            padding: 0.15rem 0.5rem;
+            border-radius: 0.25rem;
+            font-size: 0.7rem;
+            font-weight: 600;
+        }
+        .badge.blocked { background: #7f1d1d; color: #fca5a5; }
+        .badge.allowed { background: #14532d; color: #86efac; }
+        .badge.rewrite { background: #1e3a5f; color: #93c5fd; }
+        #query-log { max-height: 450px; overflow-y: auto; }
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        /* Upstream list */
+        .upstream-list { list-style: none; }
+        .upstream-list li {
+            padding: 0.4rem 0;
+            color: #94a3b8;
+            font-size: 0.85rem;
+            font-family: monospace;
+        }
+        .upstream-list li::before { content: "→ "; color: #3b82f6; }
+
+        .info-box {
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 0.5rem;
+            padding: 0.75rem 1rem;
+            margin-top: 0.75rem;
+            font-size: 0.8rem;
+            color: #94a3b8;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Oxi<span>-Hole</span></h1>
+        <div class="header-right">
+            <div class="mode-toggle">
+                <button id="modeSimple" class="active" onclick="setMode('simple')">Simple</button>
+                <button id="modeAdvanced" onclick="setMode('advanced')">Advanced</button>
+            </div>
+            <button id="masterToggle" class="master-toggle enabled" onclick="toggleMasterBlocking()">
+                Protection: ON
+            </button>
+        </div>
+    </div>
+
+    <div class="container">
+        <!-- Stats (always visible) -->
+        <div class="stats-grid">
+            <div class="stat-card">
+                <div class="label">Total Queries</div>
+                <div class="value" id="totalQueries">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Blocked Queries</div>
+                <div class="value blocked" id="blockedQueries">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Block Rate</div>
+                <div class="value pct" id="blockPct">0.0%</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Domains on Blocklist</div>
+                <div class="value size" id="blocklistSize">0</div>
+            </div>
+        </div>
+
+        <!-- ==================== SIMPLE MODE ==================== -->
+        <div id="panelSimple" class="panel active">
+            <div class="features-grid" id="featuresGrid">
+                <!-- Populated by JS -->
+            </div>
+
+            <div class="section">
+                <h2>Recent Queries</h2>
+                <div id="query-log-simple">
+                    <table>
+                        <thead><tr>
+                            <th>Time</th><th>Domain</th><th>Status</th>
+                        </tr></thead>
+                        <tbody id="queryBodySimple"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ==================== ADVANCED MODE ==================== -->
+        <div id="panelAdvanced" class="panel">
+            <div class="section">
+                <h2>System Settings</h2>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <div style="padding-right: 1rem;">
+                        <h3 style="font-size: 0.95rem; color: #e2e8f0; margin-bottom: 0.2rem;">Auto-Update Server</h3>
+                        <p style="font-size: 0.78rem; color: #f97316; line-height: 1.3;">
+                            Warning: An update could cause unforseeable bugs which could lead to the dns service breaking.
+                        </p>
+                    </div>
+                    <label class="toggle-switch" id="toggle-autoupdate">
+                        <input type="checkbox" id="autoUpdateCheckbox" onchange="toggleAutoUpdate(this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Block / Unblock Domain</h2>
+                <div class="add-domain">
+                    <input type="text" id="domainInput" placeholder="e.g. ads.example.com" />
+                    <button class="btn btn-blue" onclick="addBlocked()">Block</button>
+                    <button class="btn btn-red" onclick="removeBlocked()">Unblock</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Allowlist</h2>
+                <div class="add-domain">
+                    <input type="text" id="allowInput" placeholder="e.g. safe.example.com" />
+                    <button class="btn btn-green" onclick="addAllowlisted()">Add to Allowlist</button>
+                    <button class="btn btn-red" onclick="removeAllowlisted()">Remove</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Custom Blocklist URL</h2>
+                <div class="add-domain">
+                    <input type="text" id="blocklistUrlInput" placeholder="https://example.com/blocklist.txt" />
+                    <button class="btn btn-blue" onclick="addBlocklistUrl()">Add Blocklist</button>
+                    <button class="btn btn-red" onclick="removeBlocklistUrl()">Remove</button>
+                </div>
+                <div id="activeBlocklists" class="info-box">Loading...</div>
+            </div>
+
+            <div class="section">
+                <h2>Active Upstream DNS Servers</h2>
+                <ul class="upstream-list" id="upstreamList">
+                    <li>Loading...</li>
+                </ul>
+            </div>
+
+            <div class="section">
+                <h2>Query Log (Detailed)</h2>
+                <div id="query-log">
+                    <table>
+                        <thead><tr>
+                            <th>Time</th><th>Domain</th><th>Type</th><th>Client</th><th>Status</th><th>Upstream</th><th>Time (ms)</th>
+                        </tr></thead>
+                        <tbody id="queryBody"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const FEATURE_ICONS = {
+            'shield': '&#128737;',
+            'eye-off': '&#128683;',
+            'search': '&#128269;',
+            'users': '&#128101;',
+            'dice': '&#127922;',
+            'cpu': '&#9881;'
+        };
+
+        let currentMode = 'simple';
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('panelSimple').classList.toggle('active', mode === 'simple');
+            document.getElementById('panelAdvanced').classList.toggle('active', mode === 'advanced');
+            document.getElementById('modeSimple').classList.toggle('active', mode === 'simple');
+            document.getElementById('modeAdvanced').classList.toggle('active', mode === 'advanced');
+            if (mode === 'advanced') {
+                refreshQueries();
+                refreshUpstreams();
+                refreshBlocklistSources();
+                refreshSystemSettings();
+            }
+        }
+
+        // ---- Features ----
+        async function refreshFeatures() {
+            try {
+                const res = await fetch('/api/features');
+                const features = await res.json();
+                const grid = document.getElementById('featuresGrid');
+                grid.innerHTML = features.map(f => `
+                    <div class="feature-card ${f.enabled ? 'active' : ''}" id="feature-${f.id}">
+                        <div class="feature-icon ${f.icon}">${FEATURE_ICONS[f.icon] || '?'}</div>
+                        <div class="feature-info">
+                            <h3>${f.name}</h3>
+                            <p>${f.description}</p>
+                            <div class="feature-status" id="status-${f.id}">${f.enabled ? 'Active' : 'Disabled'}</div>
+                        </div>
+                        <label class="toggle-switch" id="toggle-${f.id}">
+                            <input type="checkbox" ${f.enabled ? 'checked' : ''} onchange="toggleFeature('${f.id}', this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
+                `).join('');
+            } catch(e) { console.error('Failed to load features', e); }
+        }
+
+        async function toggleFeature(id, enabled) {
+            const toggle = document.getElementById(`toggle-${id}`);
+            toggle.classList.add('loading');
+            const status = document.getElementById(`status-${id}`);
+            status.textContent = enabled ? 'Loading blocklist...' : 'Removing...';
+
+            try {
+                await fetch(`/api/features/${id}`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+                await refreshFeatures();
+                await refreshStats();
+            } catch(e) {
+                console.error(e);
+                status.textContent = 'Error!';
+            }
+            toggle.classList.remove('loading');
+        }
+
+        // ---- Stats ----
+        async function refreshStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const s = await res.json();
+                document.getElementById('totalQueries').textContent = s.total_queries.toLocaleString();
+                document.getElementById('blockedQueries').textContent = s.blocked_queries.toLocaleString();
+                document.getElementById('blockPct').textContent = s.block_percentage.toFixed(1) + '%';
+                document.getElementById('blocklistSize').textContent = s.blocklist_size.toLocaleString();
+                const btn = document.getElementById('masterToggle');
+                btn.textContent = 'Protection: ' + (s.blocking_enabled ? 'ON' : 'OFF');
+                btn.className = 'master-toggle ' + (s.blocking_enabled ? 'enabled' : 'disabled');
+            } catch(e) { console.error(e); }
+        }
+
+        async function toggleMasterBlocking() {
+            const btn = document.getElementById('masterToggle');
+            const isEnabled = btn.classList.contains('enabled');
+            await fetch('/api/blocking/' + (isEnabled ? 'disable' : 'enable'), { method: 'POST' });
+            refreshStats();
+        }
+
+        // ---- Queries ----
+        async function refreshQueries() {
+            try {
+                const res = await fetch('/api/queries');
+                const queries = await res.json();
+
+                // Simple view
+                const simpleBody = document.getElementById('queryBodySimple');
+                simpleBody.innerHTML = queries.slice(0, 50).map(q => `
+                    <tr>
+                        <td>${new Date(q.timestamp).toLocaleTimeString()}</td>
+                        <td>${q.domain}</td>
+                        <td><span class="badge ${q.blocked ? 'blocked' : (q.upstream === 'safe-search' ? 'rewrite' : 'allowed')}">
+                            ${q.blocked ? 'BLOCKED' : (q.upstream === 'safe-search' ? 'SAFE' : 'OK')}
+                        </span></td>
+                    </tr>
+                `).join('');
+
+                // Advanced view
+                if (currentMode === 'advanced') {
+                    const body = document.getElementById('queryBody');
+                    body.innerHTML = queries.map(q => `
+                        <tr>
+                            <td>${new Date(q.timestamp).toLocaleTimeString()}</td>
+                            <td>${q.domain}</td>
+                            <td>${q.query_type}</td>
+                            <td>${q.client_ip}</td>
+                            <td><span class="badge ${q.blocked ? 'blocked' : (q.upstream === 'safe-search' ? 'rewrite' : 'allowed')}">
+                                ${q.blocked ? 'BLOCKED' : (q.upstream === 'safe-search' ? 'SAFE' : 'OK')}
+                            </span></td>
+                            <td>${q.upstream || '-'}</td>
+                            <td>${q.response_time_ms}</td>
+                        </tr>
+                    `).join('');
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        // ---- Advanced: Domains ----
+        async function addBlocked() {
+            const input = document.getElementById('domainInput');
+            const domain = input.value.trim();
+            if (!domain) return;
+            await fetch('/api/blocklist/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain })
+            });
+            input.value = '';
+            refreshStats();
+        }
+
+        async function removeBlocked() {
+            const input = document.getElementById('domainInput');
+            const domain = input.value.trim();
+            if (!domain) return;
+            await fetch('/api/blocklist/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain })
+            });
+            input.value = '';
+            refreshStats();
+        }
+
+        async function addAllowlisted() {
+            const input = document.getElementById('allowInput');
+            const domain = input.value.trim();
+            if (!domain) return;
+            await fetch('/api/allowlist/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain })
+            });
+            input.value = '';
+        }
+
+        async function removeAllowlisted() {
+            const input = document.getElementById('allowInput');
+            const domain = input.value.trim();
+            if (!domain) return;
+            await fetch('/api/allowlist/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ domain })
+            });
+            input.value = '';
+        }
+
+        // ---- Advanced: Blocklist URLs ----
+        async function addBlocklistUrl() {
+            const input = document.getElementById('blocklistUrlInput');
+            const url = input.value.trim();
+            if (!url) return;
+            await fetch('/api/blocklist-source/add', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            input.value = '';
+            refreshBlocklistSources();
+            refreshStats();
+        }
+
+        async function removeBlocklistUrl() {
+            const input = document.getElementById('blocklistUrlInput');
+            const url = input.value.trim();
+            if (!url) return;
+            await fetch('/api/blocklist-source/remove', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url })
+            });
+            input.value = '';
+            refreshBlocklistSources();
+            refreshStats();
+        }
+
+        async function refreshBlocklistSources() {
+            try {
+                const res = await fetch('/api/blocklist-sources');
+                const sources = await res.json();
+                const el = document.getElementById('activeBlocklists');
+                if (sources.length === 0) {
+                    el.textContent = 'No custom blocklist URLs loaded.';
+                } else {
+                    el.innerHTML = sources.map(s => `<div style="margin-bottom:0.25rem;">&#8226; <code>${s}</code></div>`).join('');
+                }
+            } catch(e) { console.error(e); }
+        }
+
+        async function refreshUpstreams() {
+            try {
+                const res = await fetch('/api/upstreams');
+                const upstreams = await res.json();
+                const el = document.getElementById('upstreamList');
+                el.innerHTML = upstreams.map(u => `<li>${u}</li>`).join('');
+            } catch(e) { console.error(e); }
+        }
+
+        // ---- System Settings ----
+        async function refreshSystemSettings() {
+            try {
+                const res = await fetch('/api/system/auto-update');
+                const data = await res.json();
+                document.getElementById('autoUpdateCheckbox').checked = data.enabled;
+            } catch(e) { console.error('Failed to load auto-update state', e); }
+        }
+
+        async function toggleAutoUpdate(enabled) {
+            const toggle = document.getElementById('toggle-autoupdate');
+            toggle.classList.add('loading');
+            try {
+                const res = await fetch('/api/system/auto-update', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+                if (!res.ok) throw new Error('Failed to update');
+            } catch(e) {
+                console.error(e);
+                document.getElementById('autoUpdateCheckbox').checked = !enabled; // Revert
+            }
+            toggle.classList.remove('loading');
+        }
+
+        // ---- Auto-refresh ----
+        setInterval(() => { refreshStats(); refreshQueries(); }, 2000);
+        refreshStats();
+        refreshQueries();
+        refreshFeatures();
+    </script>
+</body>
+</html>
