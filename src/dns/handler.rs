@@ -166,13 +166,15 @@ fn build_blocked_response(request: &Message, domain: &str, query_type: RecordTyp
 async fn resolve_cname_to_ip(upstream: &UpstreamForwarder, cname: &str) -> Option<Ipv4Addr> {
     use hickory_proto::op::Query;
 
-    let name = Name::from_ascii(&format!("{}.", cname)).ok()?;
+    let name = Name::from_ascii(format!("{}.", cname)).ok()?;
     let mut request = Message::new();
     let mut header = Header::new();
-    header.set_id(std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as u16)
-        .unwrap_or(1234));
+    header.set_id(
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos() as u16)
+            .unwrap_or(1234),
+    );
     header.set_message_type(MessageType::Query);
     header.set_op_code(OpCode::Query);
     header.set_recursion_desired(true);
