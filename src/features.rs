@@ -1,6 +1,8 @@
 use crate::blocklist::BlocklistManager;
 use crate::dns::upstream::UpstreamForwarder;
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
+use std::net::Ipv4Addr;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -8,48 +10,18 @@ use tracing::{info, warn};
 /// Known blocklist URLs for each feature.
 pub const BLOCKLIST_ADS_MALWARE: &str =
     "https://raw.githubusercontent.com/ron-png/UltimateDNSBlockList/refs/heads/main/list/UltimateDNSBlockList.txt";
-pub const BLOCKLIST_NSFW: &str = "https://nsfw.oisd.nl/domainswild";
-pub const BLOCKLIST_SOCIAL_MEDIA: &str =
-    "https://raw.githubusercontent.com/nickspaargaren/no-google/master/categories/social-media.txt";
-pub const BLOCKLIST_GAMBLING: &str =
-    "https://raw.githubusercontent.com/nickspaargaren/no-google/master/categories/gambling.txt";
-pub const BLOCKLIST_CRYPTO_MINING: &str =
-    "https://zerodot1.gitlab.io/CoinBlockerLists/hosts_browser";
+pub const BLOCKLIST_NSFW: &str = "https://nsfw.oisd.nl";
+pub const SAFE_SEARCH_LIST_URL: &str =
+    "https://raw.githubusercontent.com/AdguardTeam/HostlistsRegistry/refs/heads/main/assets/engines_safe_search.txt";
+pub const YOUTUBE_SAFE_SEARCH_LIST_URL: &str =
+    "https://raw.githubusercontent.com/AdguardTeam/HostlistsRegistry/refs/heads/main/assets/youtube_safe_search.txt";
 
-/// Safe search domains that get rewritten to their "safe" IP/CNAME.
-/// Google: forcesafesearch.google.com -> 216.239.38.120
-/// Bing: strict.bing.com
-/// YouTube: restrict.youtube.com / restrictmoderate.youtube.com
-/// DuckDuckGo: safe.duckduckgo.com
-pub const SAFE_SEARCH_MAPPINGS: &[(&str, &str)] = &[
-    // Google (A record -> 216.239.38.120)
-    ("www.google.com", "216.239.38.120"),
-    ("www.google.co.uk", "216.239.38.120"),
-    ("www.google.ca", "216.239.38.120"),
-    ("www.google.com.au", "216.239.38.120"),
-    ("www.google.de", "216.239.38.120"),
-    ("www.google.fr", "216.239.38.120"),
-    ("www.google.es", "216.239.38.120"),
-    ("www.google.it", "216.239.38.120"),
-    ("www.google.nl", "216.239.38.120"),
-    ("www.google.co.jp", "216.239.38.120"),
-    ("www.google.com.br", "216.239.38.120"),
-    ("www.google.co.in", "216.239.38.120"),
-    ("www.google.ru", "216.239.38.120"),
-    // YouTube restrict
-    ("www.youtube.com", "216.239.38.120"),
-    ("m.youtube.com", "216.239.38.120"),
-    ("youtubei.googleapis.com", "216.239.38.120"),
-    ("youtube.googleapis.com", "216.239.38.120"),
-    ("www.youtube-nocookie.com", "216.239.38.120"),
-    // Bing
-    ("www.bing.com", "204.79.197.220"),
-    // DuckDuckGo
-    ("duckduckgo.com", "52.142.124.215"),
-    ("www.duckduckgo.com", "52.142.124.215"),
-    // Pixabay (safe search)
-    ("pixabay.com", "216.239.38.120"),
-];
+/// A safe search DNS rewrite target.
+#[derive(Debug, Clone)]
+pub enum SafeSearchTarget {
+    A(Ipv4Addr),
+    Cname(String),
+}
 
 /// Feature definition - a named toggle with an associated blocklist URL.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +39,7 @@ pub struct FeatureDefinition {
 pub struct FeatureManager {
     features: Arc<RwLock<Vec<FeatureDefinition>>>,
     safe_search_enabled: Arc<RwLock<bool>>,
+    safe_search_rules: Arc<RwLock<HashMap<String, SafeSearchTarget>>>,
     blocklist: BlocklistManager,
     upstream: Option<UpstreamForwarder>,
 }
@@ -93,33 +66,17 @@ impl FeatureManager {
             FeatureDefinition {
                 id: "safe_search".to_string(),
                 name: "Enforce Safe Search".to_string(),
-                description: "Forces safe search on Google, Bing, YouTube, and DuckDuckGo via DNS.".to_string(),
+                description: "Forces safe search on Google, Bing, and DuckDuckGo via DNS.".to_string(),
                 icon: "search".to_string(),
                 blocklist_url: None, // Handled via DNS rewriting, not blocklist
                 enabled: false,
             },
             FeatureDefinition {
-                id: "social_media".to_string(),
-                name: "Block Social Media".to_string(),
-                description: "Blocks Facebook, Instagram, TikTok, Twitter/X, and other social media platforms.".to_string(),
-                icon: "users".to_string(),
-                blocklist_url: Some(BLOCKLIST_SOCIAL_MEDIA.to_string()),
-                enabled: false,
-            },
-            FeatureDefinition {
-                id: "gambling".to_string(),
-                name: "Block Gambling & Betting".to_string(),
-                description: "Blocks online gambling, betting, and casino websites.".to_string(),
-                icon: "dice".to_string(),
-                blocklist_url: Some(BLOCKLIST_GAMBLING.to_string()),
-                enabled: false,
-            },
-            FeatureDefinition {
-                id: "cryptomining".to_string(),
-                name: "Block Cryptomining".to_string(),
-                description: "Blocks browser-based cryptocurrency mining scripts and domains.".to_string(),
-                icon: "cpu".to_string(),
-                blocklist_url: Some(BLOCKLIST_CRYPTO_MINING.to_string()),
+                id: "youtube_safe_search".to_string(),
+                name: "YouTube Safe Search".to_string(),
+                description: "Enforces YouTube restricted mode via DNS rewriting.".to_string(),
+                icon: "search".to_string(),
+                blocklist_url: None, // Handled via DNS rewriting, not blocklist
                 enabled: false,
             },
             FeatureDefinition {
@@ -135,6 +92,7 @@ impl FeatureManager {
         Self {
             features: Arc::new(RwLock::new(features)),
             safe_search_enabled: Arc::new(RwLock::new(false)),
+            safe_search_rules: Arc::new(RwLock::new(HashMap::new())),
             blocklist,
             upstream: None,
         }
@@ -156,30 +114,94 @@ impl FeatureManager {
 
     /// Toggle a feature on or off. If it has a blocklist, load/unload it.
     pub async fn set_feature(&self, feature_id: &str, enabled: bool) {
-        let mut features = self.features.write().await;
-        let feature = match features.iter_mut().find(|f| f.id == feature_id) {
-            Some(f) => f,
-            None => {
-                warn!("Unknown feature: {}", feature_id);
+        // Update feature state and collect needed info while holding write lock
+        let (blocklist_url, name, other_safe_search_enabled) = {
+            let mut features = self.features.write().await;
+            let feature = match features.iter_mut().find(|f| f.id == feature_id) {
+                Some(f) => f,
+                None => {
+                    warn!("Unknown feature: {}", feature_id);
+                    return;
+                }
+            };
+
+            if feature.enabled == enabled {
                 return;
             }
+
+            feature.enabled = enabled;
+            let blocklist_url = feature.blocklist_url.clone();
+            let name = feature.name.clone();
+
+            // Check if the other safe search feature is enabled (while we hold the lock)
+            let other_id = if feature_id == "safe_search" {
+                "youtube_safe_search"
+            } else {
+                "safe_search"
+            };
+            let other_enabled = features.iter().any(|f| f.id == other_id && f.enabled);
+
+            (blocklist_url, name, other_enabled)
         };
-
-        if feature.enabled == enabled {
-            return;
-        }
-
-        feature.enabled = enabled;
-        let blocklist_url = feature.blocklist_url.clone();
-        let name = feature.name.clone();
+        // Write lock on features is dropped here
 
         // Handle safe search separately
         if feature_id == "safe_search" {
-            *self.safe_search_enabled.write().await = enabled;
-            info!(
-                "Safe search {}",
-                if enabled { "enabled" } else { "disabled" }
-            );
+            if enabled {
+                info!("Enabling safe search, loading rules...");
+                match Self::fetch_rules(SAFE_SEARCH_LIST_URL).await {
+                    Ok(rules) => {
+                        info!("Loaded {} safe search rewrite rules", rules.len());
+                        let mut all_rules = self.safe_search_rules.write().await;
+                        all_rules.extend(rules);
+                        *self.safe_search_enabled.write().await = true;
+                    }
+                    Err(e) => {
+                        warn!("Failed to load safe search rules: {}", e);
+                    }
+                }
+            } else {
+                let mut all_rules = self.safe_search_rules.write().await;
+                all_rules.clear();
+                if other_safe_search_enabled {
+                    if let Ok(rules) = Self::fetch_rules(YOUTUBE_SAFE_SEARCH_LIST_URL).await {
+                        all_rules.extend(rules);
+                    }
+                } else {
+                    *self.safe_search_enabled.write().await = false;
+                }
+                info!("Safe search disabled");
+            }
+            return;
+        }
+
+        // Handle YouTube safe search separately
+        if feature_id == "youtube_safe_search" {
+            if enabled {
+                info!("Enabling YouTube safe search, loading rules...");
+                match Self::fetch_rules(YOUTUBE_SAFE_SEARCH_LIST_URL).await {
+                    Ok(rules) => {
+                        info!("Loaded {} YouTube safe search rewrite rules", rules.len());
+                        let mut all_rules = self.safe_search_rules.write().await;
+                        all_rules.extend(rules);
+                        *self.safe_search_enabled.write().await = true;
+                    }
+                    Err(e) => {
+                        warn!("Failed to load YouTube safe search rules: {}", e);
+                    }
+                }
+            } else {
+                let mut all_rules = self.safe_search_rules.write().await;
+                all_rules.clear();
+                if other_safe_search_enabled {
+                    if let Ok(rules) = Self::fetch_rules(SAFE_SEARCH_LIST_URL).await {
+                        all_rules.extend(rules);
+                    }
+                } else {
+                    *self.safe_search_enabled.write().await = false;
+                }
+                info!("YouTube safe search disabled");
+            }
             return;
         }
 
@@ -209,8 +231,8 @@ impl FeatureManager {
         }
     }
 
-    /// Get safe search IP mapping for a domain, if safe search is on.
-    pub async fn get_safe_search_ip(&self, domain: &str) -> Option<std::net::Ipv4Addr> {
+    /// Get safe search rewrite target for a domain, if safe search is on.
+    pub async fn get_safe_search_target(&self, domain: &str) -> Option<SafeSearchTarget> {
         if !*self.safe_search_enabled.read().await {
             return None;
         }
@@ -218,13 +240,58 @@ impl FeatureManager {
         let domain_lower = domain.to_lowercase();
         let domain_trimmed = domain_lower.trim_end_matches('.');
 
-        for (search_domain, ip) in SAFE_SEARCH_MAPPINGS {
-            if domain_trimmed == *search_domain {
-                if let Ok(addr) = ip.parse() {
-                    return Some(addr);
-                }
-            }
-        }
-        None
+        let rules = self.safe_search_rules.read().await;
+        rules.get(domain_trimmed).cloned()
     }
+
+    /// Fetch and parse AdGuard DNS rewrite rules from a URL.
+    async fn fetch_rules(url: &str) -> anyhow::Result<HashMap<String, SafeSearchTarget>> {
+        let resp = reqwest::get(url).await?;
+        let content = resp.text().await?;
+        Ok(parse_safe_search_rules(&content))
+    }
+}
+
+/// Parse AdGuard DNS rewrite rules into a domain -> target map.
+/// Format: `|domain.com^$dnsrewrite=NOERROR;CNAME;target.com`
+///     or: `|domain.com^$dnsrewrite=NOERROR;A;1.2.3.4`
+fn parse_safe_search_rules(content: &str) -> HashMap<String, SafeSearchTarget> {
+    let mut rules = HashMap::new();
+
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') || line.starts_with('!') {
+            continue;
+        }
+
+        // Parse: |domain^$dnsrewrite=NOERROR;TYPE;VALUE
+        let line = match line.strip_prefix('|') {
+            Some(l) => l,
+            None => continue,
+        };
+
+        let (domain_part, rewrite_part) = match line.split_once("^$dnsrewrite=NOERROR;") {
+            Some(parts) => parts,
+            None => continue,
+        };
+
+        let domain = domain_part.to_lowercase();
+        let parts: Vec<&str> = rewrite_part.splitn(2, ';').collect();
+        if parts.len() != 2 {
+            continue;
+        }
+
+        let target = match parts[0] {
+            "A" => match parts[1].parse::<Ipv4Addr>() {
+                Ok(ip) => SafeSearchTarget::A(ip),
+                Err(_) => continue,
+            },
+            "CNAME" => SafeSearchTarget::Cname(parts[1].to_string()),
+            _ => continue,
+        };
+
+        rules.insert(domain, target);
+    }
+
+    rules
 }

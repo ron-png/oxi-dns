@@ -303,6 +303,18 @@
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                    <div style="padding-right: 1rem;">
+                        <h3 style="font-size: 0.95rem; color: #e2e8f0; margin-bottom: 0.2rem;">Use Root DNS Servers</h3>
+                        <p style="font-size: 0.78rem; color: #94a3b8; line-height: 1.3;">
+                            Resolve domains directly via root servers instead of third-party resolvers. Maximum privacy — no upstream sees all your queries.
+                        </p>
+                    </div>
+                    <label class="toggle-switch" id="toggle-rootservers">
+                        <input type="checkbox" id="rootServersCheckbox" onchange="toggleFeature('root_servers', this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
             </div>
 
             <div class="section">
@@ -358,10 +370,7 @@
         const FEATURE_ICONS = {
             'shield': '&#128737;',
             'eye-off': '&#128683;',
-            'search': '&#128269;',
-            'users': '&#128101;',
-            'dice': '&#127922;',
-            'cpu': '&#9881;'
+            'search': '&#128269;'
         };
 
         let currentMode = 'simple';
@@ -377,6 +386,7 @@
                 refreshUpstreams();
                 refreshBlocklistSources();
                 refreshSystemSettings();
+                refreshFeatures();
             }
         }
 
@@ -386,7 +396,7 @@
                 const res = await fetch('/api/features');
                 const features = await res.json();
                 const grid = document.getElementById('featuresGrid');
-                grid.innerHTML = features.map(f => `
+                grid.innerHTML = features.filter(f => f.id !== 'root_servers').map(f => `
                     <div class="feature-card ${f.enabled ? 'active' : ''}" id="feature-${f.id}">
                         <div class="feature-icon ${f.icon}">${FEATURE_ICONS[f.icon] || '?'}</div>
                         <div class="feature-info">
@@ -400,6 +410,12 @@
                         </label>
                     </div>
                 `).join('');
+                // Update root servers toggle in advanced panel
+                const rootFeature = features.find(f => f.id === 'root_servers');
+                if (rootFeature) {
+                    const cb = document.getElementById('rootServersCheckbox');
+                    if (cb) cb.checked = rootFeature.enabled;
+                }
             } catch(e) { console.error('Failed to load features', e); }
         }
 

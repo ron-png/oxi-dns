@@ -1,11 +1,12 @@
 use crate::blocklist::BlocklistManager;
 use crate::dns::upstream::UpstreamForwarder;
-use crate::features::FeatureManager;
+use crate::features::{FeatureManager, SafeSearchTarget};
 use crate::stats::{QueryLogEntry, Stats};
 use chrono::Utc;
 use hickory_proto::op::{Header, Message, MessageType, OpCode, ResponseCode};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::binary::BinDecodable;
+use std::net::Ipv4Addr;
 use std::time::Instant;
 use tracing::debug;
 
@@ -37,22 +38,32 @@ pub async fn process_dns_query(
 
     // Check safe search rewriting (only for A queries)
     if query_type == RecordType::A {
-        if let Some(safe_ip) = features.get_safe_search_ip(domain_trimmed).await {
-            let response = build_safe_search_response(&request, &domain, safe_ip);
-            let response_bytes = response.to_vec()?;
+        if let Some(target) = features.get_safe_search_target(domain_trimmed).await {
+            let safe_ip = match &target {
+                SafeSearchTarget::A(ip) => Some(*ip),
+                SafeSearchTarget::Cname(cname) => {
+                    // Resolve the CNAME target via upstream
+                    resolve_cname_to_ip(upstream, cname).await
+                }
+            };
 
-            stats.record_query(QueryLogEntry {
-                timestamp: Utc::now(),
-                domain: domain_trimmed.to_string(),
-                query_type: format!("{:?}", query_type),
-                client_ip: client_ip.to_string(),
-                blocked: false,
-                response_time_ms: start.elapsed().as_millis() as u64,
-                upstream: Some("safe-search".to_string()),
-            });
+            if let Some(ip) = safe_ip {
+                let response = build_safe_search_response(&request, &domain, ip);
+                let response_bytes = response.to_vec()?;
 
-            debug!("Safe search rewrite: {} -> {}", domain_trimmed, safe_ip);
-            return Ok(response_bytes);
+                stats.record_query(QueryLogEntry {
+                    timestamp: Utc::now(),
+                    domain: domain_trimmed.to_string(),
+                    query_type: format!("{:?}", query_type),
+                    client_ip: client_ip.to_string(),
+                    blocked: false,
+                    response_time_ms: start.elapsed().as_millis() as u64,
+                    upstream: Some("safe-search".to_string()),
+                });
+
+                debug!("Safe search rewrite: {} -> {}", domain_trimmed, ip);
+                return Ok(response_bytes);
+            }
         }
     }
 
@@ -149,4 +160,37 @@ fn build_blocked_response(request: &Message, domain: &str, query_type: RecordTyp
     }
 
     response
+}
+
+/// Resolve a CNAME target to an IPv4 address by building and forwarding a DNS query.
+async fn resolve_cname_to_ip(upstream: &UpstreamForwarder, cname: &str) -> Option<Ipv4Addr> {
+    use hickory_proto::op::Query;
+
+    let name = Name::from_ascii(&format!("{}.", cname)).ok()?;
+    let mut request = Message::new();
+    let mut header = Header::new();
+    header.set_id(std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as u16)
+        .unwrap_or(1234));
+    header.set_message_type(MessageType::Query);
+    header.set_op_code(OpCode::Query);
+    header.set_recursion_desired(true);
+    request.set_header(header);
+
+    let mut query = Query::new();
+    query.set_name(name);
+    query.set_query_type(RecordType::A);
+    request.add_query(query);
+
+    let packet = request.to_vec().ok()?;
+    let (response_bytes, _) = upstream.forward(&packet).await.ok()?;
+    let response = Message::from_bytes(&response_bytes).ok()?;
+
+    for answer in response.answers() {
+        if let RData::A(ip) = answer.data() {
+            return Some(ip.0);
+        }
+    }
+    None
 }
