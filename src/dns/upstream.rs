@@ -238,9 +238,8 @@ impl UpstreamForwarder {
 
     /// Iterative resolution starting from root servers.
     async fn forward_iterative(&self, packet: &[u8]) -> anyhow::Result<(Vec<u8>, String)> {
-        use hickory_proto::op::{Message, ResponseCode};
+        use hickory_proto::op::ResponseCode;
         use hickory_proto::rr::{RData, RecordType};
-        use hickory_proto::serialize::binary::BinDecodable;
 
         let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
             .iter()
@@ -249,24 +248,33 @@ impl UpstreamForwarder {
 
         let mut last_label = "root".to_string();
 
-        for depth in 0..MAX_REFERRAL_DEPTH {
-            let server = current_servers[depth % current_servers.len()];
+        for _depth in 0..MAX_REFERRAL_DEPTH {
+            // Try each server at this level until one succeeds
+            let (response_bytes, response) =
+                match self.query_any_server(packet, &current_servers).await {
+                    Some(result) => result,
+                    None => {
+                        anyhow::bail!("Iterative resolution: all servers failed at {}", last_label);
+                    }
+                };
 
-            let response_bytes = match self.forward_udp(packet, server).await {
-                Ok(bytes) => bytes,
-                Err(e) => {
-                    warn!("Iterative: {} failed: {}", server, e);
-                    continue;
-                }
-            };
+            // Got answers — done
+            if !response.answers().is_empty() {
+                return Ok((response_bytes, format!("iterative({})", last_label)));
+            }
 
-            let response = Message::from_bytes(&response_bytes)?;
+            // NXDOMAIN is a definitive "does not exist" — return it
+            if response.response_code() == ResponseCode::NXDomain {
+                return Ok((response_bytes, format!("iterative({})", last_label)));
+            }
 
-            // Got answers, NXDOMAIN, or no further referrals — return as-is
-            if !response.answers().is_empty()
-                || response.response_code() != ResponseCode::NoError
-                || response.name_servers().is_empty()
-            {
+            // SERVFAIL/REFUSED — not useful, but we already tried all servers above
+            if response.response_code() != ResponseCode::NoError {
+                return Ok((response_bytes, format!("iterative({})", last_label)));
+            }
+
+            // No name servers in referral — return as-is (SOA-only, etc.)
+            if response.name_servers().is_empty() {
                 return Ok((response_bytes, format!("iterative({})", last_label)));
             }
 
@@ -297,19 +305,115 @@ impl UpstreamForwarder {
                 }
             }
 
+            // No glue records — resolve NS names ourselves
             if next_servers.is_empty() {
-                // No glue records — return the referral response
-                return Ok((response_bytes, format!("iterative({})", last_label)));
+                for ns_name in &ns_names {
+                    if let Ok(addrs) = self.resolve_ns_name(ns_name).await {
+                        next_servers.extend(addrs);
+                    }
+                    if !next_servers.is_empty() {
+                        break; // One resolved NS is enough
+                    }
+                }
+                if next_servers.is_empty() {
+                    warn!(
+                        "Iterative: could not resolve any NS for referral at {}",
+                        last_label
+                    );
+                    return Ok((response_bytes, format!("iterative({})", last_label)));
+                }
             }
 
             last_label = ns_names
                 .first()
                 .cloned()
-                .unwrap_or_else(|| server.to_string());
+                .unwrap_or_else(|| "unknown".to_string());
             current_servers = next_servers;
         }
 
         anyhow::bail!("Iterative resolution: max referral depth exceeded")
+    }
+
+    /// Try querying each server in the list until one gives a parseable response.
+    async fn query_any_server(
+        &self,
+        packet: &[u8],
+        servers: &[SocketAddr],
+    ) -> Option<(Vec<u8>, hickory_proto::op::Message)> {
+        use hickory_proto::serialize::binary::BinDecodable;
+
+        for server in servers {
+            match self.forward_udp(packet, *server).await {
+                Ok(bytes) => match hickory_proto::op::Message::from_bytes(&bytes) {
+                    Ok(msg) => return Some((bytes, msg)),
+                    Err(e) => {
+                        warn!("Iterative: bad response from {}: {}", server, e);
+                    }
+                },
+                Err(e) => {
+                    warn!("Iterative: {} failed: {}", server, e);
+                }
+            }
+        }
+        None
+    }
+
+    /// Resolve an NS hostname to IP addresses using the configured upstreams
+    /// (not iteratively, to avoid infinite recursion).
+    async fn resolve_ns_name(&self, ns_name: &str) -> anyhow::Result<Vec<SocketAddr>> {
+        use hickory_proto::op::{Header, Message, MessageType, OpCode};
+        use hickory_proto::rr::{Name, RData, RecordType};
+        use hickory_proto::serialize::binary::BinDecodable;
+
+        let fqdn = if ns_name.ends_with('.') {
+            ns_name.to_string()
+        } else {
+            format!("{}.", ns_name)
+        };
+        let name = Name::from_ascii(&fqdn)?;
+
+        let mut req = Message::new();
+        let mut hdr = Header::new();
+        hdr.set_id(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.subsec_nanos() as u16)
+                .unwrap_or(1234),
+        );
+        hdr.set_message_type(MessageType::Query);
+        hdr.set_op_code(OpCode::Query);
+        hdr.set_recursion_desired(true);
+        req.set_header(hdr);
+
+        let mut query = hickory_proto::op::Query::new();
+        query.set_name(name);
+        query.set_query_type(RecordType::A);
+        req.add_query(query);
+
+        let packet = req.to_vec()?;
+
+        // Query the configured upstreams (not iterative) to resolve the NS name
+        let upstreams = self.upstreams.read().unwrap().clone();
+        for upstream in &upstreams {
+            let result = self.forward_single(&packet, upstream).await;
+            if let Ok(response_bytes) = result {
+                if let Ok(response) = Message::from_bytes(&response_bytes) {
+                    let addrs: Vec<SocketAddr> = response
+                        .answers()
+                        .iter()
+                        .filter_map(|r| match r.data() {
+                            RData::A(ip) => Some(SocketAddr::new(IpAddr::V4(ip.0), 53)),
+                            _ => None,
+                        })
+                        .collect();
+                    if !addrs.is_empty() {
+                        return Ok(addrs);
+                    }
+                }
+            }
+        }
+
+        anyhow::bail!("Could not resolve NS name: {}", ns_name)
     }
 
     /// Plain UDP forwarding.

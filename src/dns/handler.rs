@@ -36,18 +36,28 @@ pub async fn process_dns_query(
         client_ip, domain_trimmed, query_type
     );
 
-    // Check safe search rewriting (only for A queries)
-    if query_type == RecordType::A {
+    // Check safe search rewriting (A and AAAA queries)
+    if query_type == RecordType::A || query_type == RecordType::AAAA {
         if let Some(target) = features.get_safe_search_target(domain_trimmed).await {
-            let response = match &target {
-                SafeSearchTarget::A(ip) => {
+            let response = match (&target, query_type) {
+                (SafeSearchTarget::A(ip), RecordType::A) => {
                     debug!("Safe search rewrite: {} -> {}", domain_trimmed, ip);
                     Some(build_safe_search_response(&request, &domain, *ip))
                 }
-                SafeSearchTarget::Cname(cname) => {
-                    debug!("Safe search CNAME rewrite: {} -> {}", domain_trimmed, cname);
-                    build_cname_rewrite_response(&request, &domain, cname, upstream).await
+                (SafeSearchTarget::A(_), RecordType::AAAA) => {
+                    // A-only rule has no IPv6 equivalent — return empty answer
+                    debug!("Safe search: no AAAA for {}", domain_trimmed);
+                    Some(build_empty_response(&request))
                 }
+                (SafeSearchTarget::Cname(cname), _) => {
+                    debug!(
+                        "Safe search CNAME rewrite: {} -> {} ({:?})",
+                        domain_trimmed, cname, query_type
+                    );
+                    build_cname_rewrite_response(&request, &domain, cname, query_type, upstream)
+                        .await
+                }
+                _ => None,
             };
 
             if let Some(response) = response {
@@ -163,13 +173,15 @@ fn build_blocked_response(request: &Message, domain: &str, query_type: RecordTyp
     response
 }
 
-/// Build a CNAME rewrite response: returns CNAME record + resolved A records.
+/// Build a CNAME rewrite response: returns CNAME record + resolved address records.
 /// This is needed for safe search enforcement (e.g. YouTube restricted mode)
 /// where the client must see the CNAME in the response.
+/// Resolves the CNAME target for the requested query_type (A or AAAA).
 async fn build_cname_rewrite_response(
     request: &Message,
     domain: &str,
     cname: &str,
+    query_type: RecordType,
     upstream: &UpstreamForwarder,
 ) -> Option<Message> {
     use hickory_proto::op::Query;
@@ -193,14 +205,14 @@ async fn build_cname_rewrite_response(
 
     let mut query = Query::new();
     query.set_name(target_name.clone());
-    query.set_query_type(RecordType::A);
+    query.set_query_type(query_type);
     resolve_req.add_query(query);
 
     let packet = resolve_req.to_vec().ok()?;
     let (response_bytes, _) = upstream.forward(&packet).await.ok()?;
     let upstream_resp = Message::from_bytes(&response_bytes).ok()?;
 
-    // Build our response with CNAME + A records
+    // Build our response with CNAME + address records
     let mut response = Message::new();
     let mut header = Header::new();
     header.set_id(request.header().id());
@@ -222,12 +234,33 @@ async fn build_cname_rewrite_response(
     let cname_record = Record::from_rdata(orig_name, 60, cname_rdata);
     response.add_answer(cname_record);
 
-    // Add A records from upstream resolution of the CNAME target
+    // Add address records from upstream resolution of the CNAME target
     for answer in upstream_resp.answers() {
-        if let RData::A(_) = answer.data() {
-            response.add_answer(answer.clone());
+        match (answer.data(), query_type) {
+            (RData::A(_), RecordType::A) | (RData::AAAA(_), RecordType::AAAA) => {
+                response.add_answer(answer.clone());
+            }
+            _ => {}
         }
     }
 
     Some(response)
+}
+
+/// Build an empty (NOERROR, no answers) response.
+fn build_empty_response(request: &Message) -> Message {
+    let mut response = Message::new();
+    let mut header = Header::new();
+    header.set_id(request.header().id());
+    header.set_message_type(MessageType::Response);
+    header.set_op_code(OpCode::Query);
+    header.set_authoritative(true);
+    header.set_recursion_desired(request.header().recursion_desired());
+    header.set_recursion_available(true);
+    header.set_response_code(ResponseCode::NoError);
+    response.set_header(header);
+    for query in request.queries() {
+        response.add_query(query.clone());
+    }
+    response
 }

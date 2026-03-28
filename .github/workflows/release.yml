@@ -15,8 +15,62 @@ env:
   BINARY_NAME: oxi-hole
 
 jobs:
+  prepare:
+    name: Set version from tag
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract version from tag
+        id: version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Strip 'v' prefix and everything after first '-' (e.g. v0.0.5b---docker -> 0.0.5b)
+          VERSION=$(echo "$TAG" | sed 's/^v//' | sed 's/---.*//')
+          # Cargo.toml needs semver — strip trailing letters for the toml version
+          CARGO_VERSION=$(echo "$VERSION" | sed 's/[a-zA-Z]*$//')
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "cargo_version=$CARGO_VERSION" >> "$GITHUB_OUTPUT"
+          echo "Version: $VERSION (Cargo: $CARGO_VERSION)"
+
+      - name: Update Cargo.toml version
+        env:
+          CARGO_VERSION: ${{ steps.version.outputs.cargo_version }}
+        run: sed -i "s/^version = .*/version = \"$CARGO_VERSION\"/" Cargo.toml
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Update Cargo.lock
+        run: cargo generate-lockfile
+
+      - name: Commit version bump
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock
+          git commit -m "release: set version to $TAG" || echo "No changes to commit"
+          git push
+
+      - name: Update tag to point to new commit
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          git tag -f "$TAG"
+          git push origin "$TAG" --force
+
   build:
     name: Build ${{ matrix.target }}
+    needs: prepare
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -53,6 +107,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref_name }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable

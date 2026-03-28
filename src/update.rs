@@ -65,7 +65,7 @@ impl UpdateChecker {
 
         let info = match fetch_latest_release().await {
             Ok(release) => {
-                let latest = release.tag_name.trim_start_matches('v').to_string();
+                let latest = clean_version(&release.tag_name);
                 let update_available = version_newer(&latest, VERSION);
                 let download_url = pick_download_asset(&release.assets);
                 VersionInfo {
@@ -159,13 +159,45 @@ async fn fetch_latest_release() -> anyhow::Result<GitHubRelease> {
     Ok(release)
 }
 
-/// Returns true if `latest` is semantically newer than `current`.
+/// Extract version from a release tag, stripping prefix and non-version suffixes.
+/// e.g. "v0.0.5b---docker" -> "0.0.5b", "v0.0.4a" -> "0.0.4a"
+fn clean_version(tag: &str) -> String {
+    let s = tag.trim_start_matches('v');
+    // Take the version part: digits, dots, and trailing letters (e.g. "0.0.5b")
+    // Stop at the first '-' or any other non-version character
+    s.split('-').next().unwrap_or(s).to_string()
+}
+
+/// Parse a version string like "0.0.5b" into numeric parts and an optional letter suffix.
+fn parse_version(v: &str) -> (Vec<u64>, Option<char>) {
+    let v = v.trim_start_matches('v');
+    let mut nums = Vec::new();
+    let mut suffix = None;
+
+    for part in v.split('.') {
+        // Last segment may have a letter suffix, e.g. "5b"
+        let num_str: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let letter: Option<char> = part.chars().find(|c| c.is_ascii_alphabetic());
+        if let Ok(n) = num_str.parse::<u64>() {
+            nums.push(n);
+        }
+        if letter.is_some() {
+            suffix = letter;
+        }
+    }
+    (nums, suffix)
+}
+
+/// Returns true if `latest` is newer than `current`.
+/// Handles versions like "0.0.5b" > "0.0.5a" > "0.0.5" > "0.0.4a".
 fn version_newer(latest: &str, current: &str) -> bool {
-    let parse =
-        |v: &str| -> Vec<u64> { v.split('.').filter_map(|s| s.parse::<u64>().ok()).collect() };
-    let l = parse(latest);
-    let c = parse(current);
-    l > c
+    let (l_nums, l_suf) = parse_version(latest);
+    let (c_nums, c_suf) = parse_version(current);
+    match l_nums.cmp(&c_nums) {
+        std::cmp::Ordering::Greater => true,
+        std::cmp::Ordering::Less => false,
+        std::cmp::Ordering::Equal => l_suf > c_suf,
+    }
 }
 
 /// Pick the right binary asset for the current OS/arch.
@@ -203,5 +235,20 @@ mod tests {
         assert!(version_newer("1.0.0", "0.9.9"));
         assert!(!version_newer("0.3.0", "0.3.0"));
         assert!(!version_newer("0.2.0", "0.3.0"));
+        // Letter suffixes
+        assert!(version_newer("0.0.5b", "0.0.5a"));
+        assert!(version_newer("0.0.5a", "0.0.5"));
+        assert!(version_newer("0.0.5b", "0.0.5"));
+        assert!(!version_newer("0.0.5a", "0.0.5a"));
+        assert!(!version_newer("0.0.5", "0.0.5a"));
+        assert!(version_newer("0.0.6", "0.0.5b"));
+    }
+
+    #[test]
+    fn test_clean_version() {
+        assert_eq!(clean_version("v0.0.5b---docker"), "0.0.5b");
+        assert_eq!(clean_version("v0.0.4a"), "0.0.4a");
+        assert_eq!(clean_version("v1.2.3"), "1.2.3");
+        assert_eq!(clean_version("0.0.5"), "0.0.5");
     }
 }

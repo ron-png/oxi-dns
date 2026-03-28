@@ -370,14 +370,16 @@
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
-                <div class="add-domain">
-                    <input type="text" id="upstreamInput" placeholder="e.g. tls://1.1.1.1 or 8.8.8.8" />
-                    <button class="btn btn-blue" onclick="addUpstream()">Add</button>
-                    <button class="btn btn-red" onclick="removeUpstream()">Remove</button>
+                <div id="upstreamControls">
+                    <div class="add-domain">
+                        <input type="text" id="upstreamInput" placeholder="e.g. tls://1.1.1.1 or 8.8.8.8" />
+                        <button class="btn btn-blue" onclick="addUpstream()">Add</button>
+                        <button class="btn btn-red" onclick="removeUpstream()">Remove</button>
+                    </div>
+                    <ul class="upstream-list" id="upstreamList">
+                        <li>Loading...</li>
+                    </ul>
                 </div>
-                <ul class="upstream-list" id="upstreamList">
-                    <li>Loading...</li>
-                </ul>
             </div>
 
             <div class="section">
@@ -443,6 +445,12 @@
                 if (rootFeature) {
                     const cb = document.getElementById('rootServersCheckbox');
                     if (cb) cb.checked = rootFeature.enabled;
+                    // Disable upstream controls when root servers are active
+                    const controls = document.getElementById('upstreamControls');
+                    if (controls) {
+                        controls.style.opacity = rootFeature.enabled ? '0.4' : '1';
+                        controls.style.pointerEvents = rootFeature.enabled ? 'none' : 'auto';
+                    }
                 }
             } catch(e) { console.error('Failed to load features', e); }
         }
