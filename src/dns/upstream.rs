@@ -141,6 +141,7 @@ impl UpstreamForwarder {
         self.use_root_servers.store(enabled, Ordering::Relaxed);
     }
 
+    #[allow(dead_code)]
     pub fn is_using_root_servers(&self) -> bool {
         self.use_root_servers.load(Ordering::Relaxed)
     }
