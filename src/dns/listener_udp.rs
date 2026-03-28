@@ -1,10 +1,12 @@
 use crate::blocklist::BlocklistManager;
+use crate::config::BlockingMode;
 use crate::dns::handler;
 use crate::dns::upstream::UpstreamForwarder;
 use crate::features::FeatureManager;
 use crate::stats::Stats;
 use std::sync::Arc;
 use tokio::net::UdpSocket;
+use tokio::sync::RwLock;
 use tracing::{debug, error};
 
 pub async fn run(
@@ -13,6 +15,7 @@ pub async fn run(
     stats: Stats,
     upstream: UpstreamForwarder,
     features: FeatureManager,
+    blocking_mode: Arc<RwLock<BlockingMode>>,
 ) -> anyhow::Result<()> {
     let socket = Arc::new(UdpSocket::bind(&addr).await?);
     let mut buf = vec![0u8; 4096];
@@ -32,10 +35,11 @@ pub async fn run(
         let st = stats.clone();
         let up = upstream.clone();
         let ft = features.clone();
+        let bm = blocking_mode.clone();
 
         tokio::spawn(async move {
             let client_ip = src.ip().to_string();
-            match handler::process_dns_query(&packet, &client_ip, &bl, &up, &st, &ft).await {
+            match handler::process_dns_query(&packet, &client_ip, &bl, &up, &st, &ft, &bm).await {
                 Ok(response) => {
                     if let Err(e) = sock.send_to(&response, src).await {
                         debug!("Failed to send UDP response to {}: {}", src, e);

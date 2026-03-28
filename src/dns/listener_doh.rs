@@ -1,4 +1,5 @@
 use crate::blocklist::BlocklistManager;
+use crate::config::BlockingMode;
 use crate::dns::handler;
 use crate::dns::upstream::UpstreamForwarder;
 use crate::features::FeatureManager;
@@ -12,6 +13,7 @@ use base64::Engine;
 use serde::Deserialize;
 use std::sync::Arc;
 use tokio::net::TcpListener;
+use tokio::sync::RwLock;
 use tokio_rustls::TlsAcceptor;
 use tower_service::Service;
 use tracing::{debug, error, info};
@@ -22,6 +24,7 @@ struct DohState {
     stats: Stats,
     upstream: UpstreamForwarder,
     features: FeatureManager,
+    blocking_mode: Arc<RwLock<BlockingMode>>,
 }
 
 pub async fn run(
@@ -30,6 +33,7 @@ pub async fn run(
     stats: Stats,
     upstream: UpstreamForwarder,
     features: FeatureManager,
+    blocking_mode: Arc<RwLock<BlockingMode>>,
     tls_config: Arc<rustls::ServerConfig>,
 ) -> anyhow::Result<()> {
     let state = DohState {
@@ -37,6 +41,7 @@ pub async fn run(
         stats,
         upstream,
         features,
+        blocking_mode,
     };
 
     let app = Router::new()
@@ -119,6 +124,7 @@ async fn doh_get(
         &state.upstream,
         &state.stats,
         &state.features,
+        &state.blocking_mode,
     )
     .await
     {
@@ -150,6 +156,7 @@ async fn doh_post(State(state): State<DohState>, req: axum::extract::Request) ->
         &state.upstream,
         &state.stats,
         &state.features,
+        &state.blocking_mode,
     )
     .await
     {

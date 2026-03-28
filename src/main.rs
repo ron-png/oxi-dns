@@ -109,6 +109,11 @@ async fn main() -> anyhow::Result<()> {
     // Initialize stats
     let stats = stats::Stats::new(10_000);
 
+    // Shared blocking mode (so web UI can change it at runtime)
+    let blocking_mode = std::sync::Arc::new(tokio::sync::RwLock::new(
+        config.blocking.blocking_mode.clone(),
+    ));
+
     // Start DNS server (all protocols)
     let upstream_for_web = upstream.clone();
     let dns_server = dns::DnsServer::new(
@@ -117,6 +122,7 @@ async fn main() -> anyhow::Result<()> {
         stats.clone(),
         upstream,
         feature_manager.clone(),
+        blocking_mode.clone(),
         server_tls_config,
         quic_server_config,
     );
@@ -168,6 +174,7 @@ async fn main() -> anyhow::Result<()> {
         auto_update: std::sync::Arc::new(tokio::sync::RwLock::new(config.system.auto_update)),
         update_checker,
         blocklist_update_interval,
+        blocking_mode,
         config_path: config_path.clone(),
     };
 

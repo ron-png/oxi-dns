@@ -1,4 +1,5 @@
 use crate::blocklist::BlocklistManager;
+use crate::config::BlockingMode;
 use crate::dns::upstream::UpstreamForwarder;
 use crate::features::{FeatureManager, SafeSearchTarget};
 use crate::stats::{QueryLogEntry, Stats};
@@ -7,7 +8,9 @@ use hickory_proto::op::{Header, Message, MessageType, OpCode, ResponseCode};
 use hickory_proto::rr::{Name, RData, Record, RecordType};
 use hickory_proto::serialize::binary::BinDecodable;
 use std::net::Ipv4Addr;
+use std::sync::Arc;
 use std::time::Instant;
+use tokio::sync::RwLock;
 use tracing::debug;
 
 /// Process a DNS query: check safe search, check blocklist, forward if allowed.
@@ -18,6 +21,7 @@ pub async fn process_dns_query(
     upstream: &UpstreamForwarder,
     stats: &Stats,
     features: &FeatureManager,
+    blocking_mode: &Arc<RwLock<BlockingMode>>,
 ) -> anyhow::Result<Vec<u8>> {
     let start = Instant::now();
     let request = Message::from_bytes(packet)?;
@@ -80,7 +84,8 @@ pub async fn process_dns_query(
 
     // Check blocklist
     if blocklist.is_blocked(domain_trimmed).await {
-        let response = build_blocked_response(&request, &domain, query_type);
+        let mode = blocking_mode.read().await;
+        let response = build_blocked_response(&request, &domain, query_type, &mode);
         let response_bytes = response.to_vec()?;
 
         stats.record_query(QueryLogEntry {
@@ -138,8 +143,13 @@ fn build_safe_search_response(request: &Message, domain: &str, ip: Ipv4Addr) -> 
     response
 }
 
-/// Build a response that blocks the domain by returning 0.0.0.0 / :: sinkhole.
-fn build_blocked_response(request: &Message, domain: &str, query_type: RecordType) -> Message {
+/// Build a response that blocks the domain according to the configured blocking mode.
+fn build_blocked_response(
+    request: &Message,
+    domain: &str,
+    query_type: RecordType,
+    mode: &BlockingMode,
+) -> Message {
     let mut response = Message::new();
     let mut header = Header::new();
     header.set_id(request.header().id());
@@ -148,26 +158,69 @@ fn build_blocked_response(request: &Message, domain: &str, query_type: RecordTyp
     header.set_authoritative(true);
     header.set_recursion_desired(request.header().recursion_desired());
     header.set_recursion_available(true);
-    header.set_response_code(ResponseCode::NoError);
-    response.set_header(header);
 
+    match mode {
+        BlockingMode::Refused => {
+            header.set_response_code(ResponseCode::Refused);
+            response.set_header(header);
+            for query in request.queries() {
+                response.add_query(query.clone());
+            }
+            return response;
+        }
+        BlockingMode::NxDomain => {
+            header.set_response_code(ResponseCode::NXDomain);
+            response.set_header(header);
+            for query in request.queries() {
+                response.add_query(query.clone());
+            }
+            return response;
+        }
+        _ => {
+            header.set_response_code(ResponseCode::NoError);
+        }
+    }
+
+    response.set_header(header);
     for query in request.queries() {
         response.add_query(query.clone());
     }
 
     let name = Name::from_ascii(domain).unwrap_or_default();
-    match query_type {
-        RecordType::A => {
-            let rdata = RData::A("0.0.0.0".parse().unwrap());
-            let record = Record::from_rdata(name, 300, rdata);
-            response.add_answer(record);
+
+    match mode {
+        BlockingMode::Default | BlockingMode::NullIp => {
+            // Both Default and NullIp return 0.0.0.0 / :: for adblock-style rules.
+            // Default mode would also handle hosts-style rules differently, but
+            // since we don't track rule origin here, it behaves the same as NullIp.
+            match query_type {
+                RecordType::A => {
+                    let rdata = RData::A("0.0.0.0".parse().unwrap());
+                    let record = Record::from_rdata(name, 300, rdata);
+                    response.add_answer(record);
+                }
+                RecordType::AAAA => {
+                    let rdata = RData::AAAA("::".parse().unwrap());
+                    let record = Record::from_rdata(name, 300, rdata);
+                    response.add_answer(record);
+                }
+                _ => {}
+            }
         }
-        RecordType::AAAA => {
-            let rdata = RData::AAAA("::".parse().unwrap());
-            let record = Record::from_rdata(name, 300, rdata);
-            response.add_answer(record);
-        }
-        _ => {}
+        BlockingMode::CustomIp { ipv4, ipv6 } => match query_type {
+            RecordType::A => {
+                let rdata = RData::A((*ipv4).into());
+                let record = Record::from_rdata(name, 300, rdata);
+                response.add_answer(record);
+            }
+            RecordType::AAAA => {
+                let rdata = RData::AAAA((*ipv6).into());
+                let record = Record::from_rdata(name, 300, rdata);
+                response.add_answer(record);
+            }
+            _ => {}
+        },
+        BlockingMode::Refused | BlockingMode::NxDomain => unreachable!(),
     }
 
     response

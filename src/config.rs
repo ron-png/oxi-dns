@@ -1,5 +1,43 @@
 use serde::{Deserialize, Serialize};
+use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
+
+/// How blocked domains are responded to.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "mode", content = "value")]
+pub enum BlockingMode {
+    /// Adblock-style → 0.0.0.0/::; hosts-style → IP from the rule.
+    Default,
+    /// Respond with DNS REFUSED rcode.
+    Refused,
+    /// Respond with DNS NXDOMAIN rcode.
+    NxDomain,
+    /// Always respond with 0.0.0.0 (A) / :: (AAAA).
+    NullIp,
+    /// Respond with user-specified IPs.
+    CustomIp {
+        ipv4: Ipv4Addr,
+        ipv6: Ipv6Addr,
+    },
+}
+
+impl std::fmt::Display for BlockingMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            BlockingMode::Default => write!(f, "default"),
+            BlockingMode::Refused => write!(f, "refused"),
+            BlockingMode::NxDomain => write!(f, "nxdomain"),
+            BlockingMode::NullIp => write!(f, "null_ip"),
+            BlockingMode::CustomIp { ipv4, ipv6 } => write!(f, "custom_ip({}, {})", ipv4, ipv6),
+        }
+    }
+}
+
+impl Default for BlockingMode {
+    fn default() -> Self {
+        BlockingMode::Default
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -74,6 +112,9 @@ pub struct BlockingConfig {
     /// Enabled feature IDs (restored on restart)
     #[serde(default)]
     pub enabled_features: Vec<String>,
+    /// How blocked domains are responded to
+    #[serde(default)]
+    pub blocking_mode: BlockingMode,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -136,6 +177,7 @@ impl Default for BlockingConfig {
             allowlist: Vec::new(),
             update_interval_minutes: default_update_interval(),
             enabled_features: Vec::new(),
+            blocking_mode: BlockingMode::default(),
         }
     }
 }

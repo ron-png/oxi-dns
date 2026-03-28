@@ -688,6 +688,53 @@
             font-family: var(--font-mono);
         }
 
+        /* ---- Blocking Mode ---- */
+        .blocking-mode-options {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .blocking-mode-option {
+            display: flex;
+            align-items: flex-start;
+            gap: 10px;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: border-color 0.2s, background 0.2s;
+        }
+
+        .blocking-mode-option:hover {
+            border-color: var(--color-accent);
+        }
+
+        .blocking-mode-option input[type="radio"] {
+            margin-top: 3px;
+            accent-color: var(--color-accent);
+        }
+
+        .blocking-mode-option input[type="radio"]:checked ~ .blocking-mode-label {
+            color: var(--text-primary);
+        }
+
+        .blocking-mode-label {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+
+        .blocking-mode-label strong {
+            font-size: 13px;
+            color: var(--text-primary);
+        }
+
+        .blocking-mode-label span {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
         /* ---- Footer ---- */
         .footer {
             border-top: 1px solid var(--border);
@@ -849,6 +896,55 @@
             </div>
 
             <div class="section">
+                <h2>Blocking Mode</h2>
+                <p style="color: var(--text-muted); margin-bottom: 12px;">How blocked domains are responded to by the DNS server.</p>
+                <div class="blocking-mode-options">
+                    <label class="blocking-mode-option">
+                        <input type="radio" name="blockingMode" value="default" onchange="setBlockingMode('default')">
+                        <div class="blocking-mode-label">
+                            <strong>Default</strong>
+                            <span>Respond with 0.0.0.0 / :: for adblock-style rules; use the IP from hosts-style rules.</span>
+                        </div>
+                    </label>
+                    <label class="blocking-mode-option">
+                        <input type="radio" name="blockingMode" value="refused" onchange="setBlockingMode('refused')">
+                        <div class="blocking-mode-label">
+                            <strong>REFUSED</strong>
+                            <span>Respond with REFUSED DNS response code.</span>
+                        </div>
+                    </label>
+                    <label class="blocking-mode-option">
+                        <input type="radio" name="blockingMode" value="nxdomain" onchange="setBlockingMode('nxdomain')">
+                        <div class="blocking-mode-label">
+                            <strong>NXDOMAIN</strong>
+                            <span>Respond with NXDOMAIN DNS response code.</span>
+                        </div>
+                    </label>
+                    <label class="blocking-mode-option">
+                        <input type="radio" name="blockingMode" value="null_ip" onchange="setBlockingMode('null_ip')">
+                        <div class="blocking-mode-label">
+                            <strong>Null IP</strong>
+                            <span>Always respond with 0.0.0.0 (A) / :: (AAAA).</span>
+                        </div>
+                    </label>
+                    <label class="blocking-mode-option">
+                        <input type="radio" name="blockingMode" value="custom_ip" onchange="setBlockingMode('custom_ip')">
+                        <div class="blocking-mode-label">
+                            <strong>Custom IP</strong>
+                            <span>Respond with a manually specified IP address.</span>
+                        </div>
+                    </label>
+                </div>
+                <div id="customIpInputs" style="display: none; margin-top: 12px;">
+                    <div class="add-domain" style="margin-bottom: 8px;">
+                        <input type="text" id="customIpv4" placeholder="IPv4 (e.g. 192.168.1.1)" style="flex:1;" />
+                        <input type="text" id="customIpv6" placeholder="IPv6 (e.g. ::1)" style="flex:1;" />
+                        <button class="btn btn-accent" onclick="saveCustomIp()">Save</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="section">
                 <h2>Block / Unblock Domain</h2>
                 <div class="add-domain">
                     <input type="text" id="domainInput" placeholder="e.g. ads.example.com" />
@@ -956,6 +1052,7 @@
                 refreshFeatures();
                 refreshCustomBlocked();
                 refreshAllowlist();
+                refreshBlockingMode();
             }
         }
 
@@ -1336,6 +1433,54 @@
                 document.getElementById('autoUpdateCheckbox').checked = !enabled;
             }
             toggle.classList.remove('loading');
+        }
+
+        // ---- Blocking Mode ----
+        async function refreshBlockingMode() {
+            try {
+                const res = await fetch('/api/blocking/mode');
+                const data = await res.json();
+                const radios = document.querySelectorAll('input[name="blockingMode"]');
+                radios.forEach(r => r.checked = r.value === data.mode);
+                const customInputs = document.getElementById('customIpInputs');
+                if (data.mode === 'custom_ip') {
+                    customInputs.style.display = 'block';
+                    document.getElementById('customIpv4').value = data.custom_ipv4 || '';
+                    document.getElementById('customIpv6').value = data.custom_ipv6 || '';
+                } else {
+                    customInputs.style.display = 'none';
+                }
+            } catch (e) { console.error('Failed to load blocking mode', e); }
+        }
+
+        async function setBlockingMode(mode) {
+            const customInputs = document.getElementById('customIpInputs');
+            if (mode === 'custom_ip') {
+                customInputs.style.display = 'block';
+                // Don't save yet — wait for user to enter IPs and click Save
+                return;
+            }
+            customInputs.style.display = 'none';
+            try {
+                await fetch('/api/blocking/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode })
+                });
+            } catch (e) { console.error('Failed to set blocking mode', e); }
+        }
+
+        async function saveCustomIp() {
+            const ipv4 = document.getElementById('customIpv4').value.trim();
+            const ipv6 = document.getElementById('customIpv6').value.trim();
+            if (!ipv4 && !ipv6) { alert('Please enter at least one IP address.'); return; }
+            try {
+                await fetch('/api/blocking/mode', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ mode: 'custom_ip', custom_ipv4: ipv4 || '0.0.0.0', custom_ipv6: ipv6 || '::' })
+                });
+            } catch (e) { console.error('Failed to set custom IP blocking mode', e); }
         }
 
         // ---- Version / Update ----

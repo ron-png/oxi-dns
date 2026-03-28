@@ -1,5 +1,5 @@
 use crate::blocklist::BlocklistManager;
-use crate::config::Config;
+use crate::config::{BlockingMode, Config};
 use crate::dns::upstream::UpstreamForwarder;
 use crate::features::FeatureManager;
 use crate::stats::Stats;
@@ -23,6 +23,7 @@ pub struct AppState {
     pub auto_update: std::sync::Arc<tokio::sync::RwLock<bool>>,
     pub update_checker: UpdateChecker,
     pub blocklist_update_interval: std::sync::Arc<tokio::sync::RwLock<u64>>,
+    pub blocking_mode: std::sync::Arc<tokio::sync::RwLock<BlockingMode>>,
     pub config_path: PathBuf,
 }
 
@@ -54,6 +55,7 @@ impl AppState {
             .map(|f| f.id)
             .collect();
         config.system.auto_update = *self.auto_update.read().await;
+        config.blocking.blocking_mode = self.blocking_mode.read().await.clone();
 
         if let Err(e) = config.save(&self.config_path) {
             tracing::warn!("Failed to save config: {}", e);
@@ -105,6 +107,9 @@ pub async fn run_web_server(listen: &str, state: AppState) -> anyhow::Result<()>
             "/api/system/blocklist-interval",
             post(api_set_blocklist_interval),
         )
+        // Blocking mode
+        .route("/api/blocking/mode", get(api_get_blocking_mode))
+        .route("/api/blocking/mode", post(api_set_blocking_mode))
         // Version / update
         .route("/api/system/version", get(api_version))
         .route("/api/system/version/check", post(api_version_check))
@@ -172,6 +177,76 @@ async fn api_enable_blocking(State(state): State<AppState>) -> StatusCode {
 async fn api_disable_blocking(State(state): State<AppState>) -> StatusCode {
     state.blocklist.set_enabled(false).await;
     info!("Blocking disabled via web API");
+    state.save_config().await;
+    StatusCode::OK
+}
+
+// ==================== Blocking Mode ====================
+
+#[derive(Serialize)]
+struct BlockingModeResponse {
+    mode: String,
+    custom_ipv4: Option<String>,
+    custom_ipv6: Option<String>,
+}
+
+async fn api_get_blocking_mode(State(state): State<AppState>) -> Json<BlockingModeResponse> {
+    let mode = state.blocking_mode.read().await;
+    let (mode_str, ipv4, ipv6) = match &*mode {
+        BlockingMode::Default => ("default".to_string(), None, None),
+        BlockingMode::Refused => ("refused".to_string(), None, None),
+        BlockingMode::NxDomain => ("nxdomain".to_string(), None, None),
+        BlockingMode::NullIp => ("null_ip".to_string(), None, None),
+        BlockingMode::CustomIp { ipv4, ipv6 } => (
+            "custom_ip".to_string(),
+            Some(ipv4.to_string()),
+            Some(ipv6.to_string()),
+        ),
+    };
+    Json(BlockingModeResponse {
+        mode: mode_str,
+        custom_ipv4: ipv4,
+        custom_ipv6: ipv6,
+    })
+}
+
+#[derive(Deserialize)]
+struct BlockingModeRequest {
+    mode: String,
+    #[serde(default)]
+    custom_ipv4: Option<String>,
+    #[serde(default)]
+    custom_ipv6: Option<String>,
+}
+
+async fn api_set_blocking_mode(
+    State(state): State<AppState>,
+    Json(req): Json<BlockingModeRequest>,
+) -> StatusCode {
+    let new_mode = match req.mode.as_str() {
+        "default" => BlockingMode::Default,
+        "refused" => BlockingMode::Refused,
+        "nxdomain" => BlockingMode::NxDomain,
+        "null_ip" => BlockingMode::NullIp,
+        "custom_ip" => {
+            let ipv4 = req
+                .custom_ipv4
+                .as_deref()
+                .unwrap_or("0.0.0.0")
+                .parse()
+                .unwrap_or_else(|_| "0.0.0.0".parse().unwrap());
+            let ipv6 = req
+                .custom_ipv6
+                .as_deref()
+                .unwrap_or("::")
+                .parse()
+                .unwrap_or_else(|_| "::".parse().unwrap());
+            BlockingMode::CustomIp { ipv4, ipv6 }
+        }
+        _ => return StatusCode::BAD_REQUEST,
+    };
+    info!("Blocking mode set to {}", new_mode);
+    *state.blocking_mode.write().await = new_mode;
     state.save_config().await;
     StatusCode::OK
 }

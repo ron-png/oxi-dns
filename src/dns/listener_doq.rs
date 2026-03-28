@@ -1,8 +1,11 @@
 use crate::blocklist::BlocklistManager;
+use crate::config::BlockingMode;
 use crate::dns::handler;
 use crate::dns::upstream::UpstreamForwarder;
 use crate::features::FeatureManager;
 use crate::stats::Stats;
+use std::sync::Arc;
+use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
 pub async fn run(
@@ -11,6 +14,7 @@ pub async fn run(
     stats: Stats,
     upstream: UpstreamForwarder,
     features: FeatureManager,
+    blocking_mode: Arc<RwLock<BlockingMode>>,
     quic_config: quinn::ServerConfig,
 ) -> anyhow::Result<()> {
     let endpoint = quinn::Endpoint::server(quic_config, addr.parse()?)?;
@@ -21,6 +25,7 @@ pub async fn run(
         let st = stats.clone();
         let up = upstream.clone();
         let ft = features.clone();
+        let bm = blocking_mode.clone();
 
         tokio::spawn(async move {
             match incoming.await {
@@ -35,12 +40,14 @@ pub async fn run(
                                 let st = st.clone();
                                 let up = up.clone();
                                 let ft = ft.clone();
+                                let bm = bm.clone();
                                 let cip = client_ip.clone();
 
                                 tokio::spawn(async move {
-                                    if let Err(e) =
-                                        handle_doq_stream(send, recv, &cip, &bl, &st, &up, &ft)
-                                            .await
+                                    if let Err(e) = handle_doq_stream(
+                                        send, recv, &cip, &bl, &st, &up, &ft, &bm,
+                                    )
+                                    .await
                                     {
                                         debug!("DoQ stream error from {}: {}", cip, e);
                                     }
@@ -72,6 +79,7 @@ async fn handle_doq_stream(
     stats: &Stats,
     upstream: &UpstreamForwarder,
     features: &FeatureManager,
+    blocking_mode: &Arc<RwLock<BlockingMode>>,
 ) -> anyhow::Result<()> {
     let mut len_buf = [0u8; 2];
     recv.read_exact(&mut len_buf).await?;
@@ -84,9 +92,16 @@ async fn handle_doq_stream(
     let mut msg_buf = vec![0u8; msg_len];
     recv.read_exact(&mut msg_buf).await?;
 
-    let response =
-        handler::process_dns_query(&msg_buf, client_ip, blocklist, upstream, stats, features)
-            .await?;
+    let response = handler::process_dns_query(
+        &msg_buf,
+        client_ip,
+        blocklist,
+        upstream,
+        stats,
+        features,
+        blocking_mode,
+    )
+    .await?;
 
     let resp_len = (response.len() as u16).to_be_bytes();
     send.write_all(&resp_len).await?;
