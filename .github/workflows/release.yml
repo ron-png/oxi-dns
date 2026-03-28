@@ -20,6 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
+      commit_sha: ${{ steps.push.outputs.commit_sha }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -51,7 +52,8 @@ jobs:
       - name: Update Cargo.lock
         run: cargo generate-lockfile
 
-      - name: Commit version bump
+      - name: Commit version bump and update tag
+        id: push
         env:
           TAG: ${{ github.ref_name }}
         run: |
@@ -60,13 +62,9 @@ jobs:
           git add Cargo.toml Cargo.lock
           git commit -m "release: set version to $TAG" || echo "No changes to commit"
           git push
-
-      - name: Update tag to point to new commit
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
           git tag -f "$TAG"
           git push origin "$TAG" --force
+          echo "commit_sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build ${{ matrix.target }}
@@ -108,7 +106,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ needs.prepare.outputs.commit_sha }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
