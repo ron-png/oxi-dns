@@ -7,6 +7,7 @@
 # Options:
 #   -r  Reinstall (purge all files and install fresh)
 #   -u  Uninstall
+#   -U  Update (download latest binary and restart service)
 #   -v  Verbose output
 #   -c <channel>  Release channel (stable, beta, edge). Default: stable
 #   -h  Show help
@@ -28,6 +29,7 @@ LOG_DIR="/var/log/oxi-hole"
 CHANNEL="stable"
 REINSTALL=0
 UNINSTALL=0
+UPDATE=0
 VERBOSE=0
 
 # Save original arguments before getopts consumes them
@@ -81,31 +83,35 @@ Options:
   -c <channel>  Release channel: stable (default), beta, edge
   -r            Reinstall (purge all files and install fresh)
   -u            Uninstall Oxi-Hole
+  -U            Update (download latest binary and restart service)
   -v            Verbose output
   -h            Show this help message
 
-Note: -r and -u are mutually exclusive.
+Note: -r, -u, and -U are mutually exclusive.
 
 Examples:
   Install:     curl -s -S -L "https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/master/scripts/install.sh?v=\$(date +%s)" | sh
+  Update:      curl -s -S -L ... | sh -s -- -U
   Reinstall:   curl -s -S -L ... | sh -s -- -r
   Uninstall:   curl -s -S -L ... | sh -s -- -u
 EOF
 }
 
-while getopts "c:ruvh" opt; do
+while getopts "c:ruUvh" opt; do
     case "$opt" in
         c) CHANNEL="$OPTARG" ;;
         r) REINSTALL=1 ;;
         u) UNINSTALL=1 ;;
+        U) UPDATE=1 ;;
         v) VERBOSE=1 ;;
         h) usage; exit 0 ;;
         *) usage; exit 1 ;;
     esac
 done
 
-if [ "$REINSTALL" -eq 1 ] && [ "$UNINSTALL" -eq 1 ]; then
-    log_error "Options -r (reinstall) and -u (uninstall) are mutually exclusive."
+EXCLUSIVE_COUNT=$(( REINSTALL + UNINSTALL + UPDATE ))
+if [ "$EXCLUSIVE_COUNT" -gt 1 ]; then
+    log_error "Options -r (reinstall), -u (uninstall), and -U (update) are mutually exclusive."
     exit 1
 fi
 
@@ -439,6 +445,94 @@ do_install() {
     printf "    sudo journalctl -u ${SERVICE_NAME} -f\n"
     printf "\n"
     printf "  ${CYAN}Edit config:${NC}  sudo nano ${CONFIG_DIR}/config.toml\n"
+    printf "\n"
+}
+
+# ============================================================================
+# Update (binary-only, preserves config and service)
+# ============================================================================
+
+do_update() {
+    log_step "Updating Oxi-Hole"
+
+    if [ ! -f "${INSTALL_DIR}/${BINARY_NAME}" ]; then
+        log_error "Oxi-Hole is not installed at ${INSTALL_DIR}/${BINARY_NAME}"
+        log_error "Run the installer without -U to perform a fresh install."
+        exit 1
+    fi
+
+    detect_os
+    detect_arch
+    check_dependencies
+    get_latest_version
+
+    # Compare versions
+    CURRENT_VERSION=$("${INSTALL_DIR}/${BINARY_NAME}" --version 2>/dev/null || echo "unknown")
+    CV_NUM=$(echo "$CURRENT_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
+    LV_NUM=$(echo "$VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
+
+    if [ "$CV_NUM" = "$LV_NUM" ]; then
+        log_info "Already up to date (version: ${CV_NUM})"
+        exit 0
+    fi
+
+    if command -v sort >/dev/null 2>&1 && printf '%s\n' "1" | sort -V >/dev/null 2>&1; then
+        HIGHEST=$(printf "%s\n%s" "$CV_NUM" "$LV_NUM" | sort -V | tail -n1)
+        if [ "$HIGHEST" = "$CV_NUM" ] && [ "$CV_NUM" != "$LV_NUM" ]; then
+            log_info "Installed version (${CV_NUM}) is newer than latest release (${LV_NUM}). Nothing to do."
+            exit 0
+        fi
+    fi
+
+    log_info "Updating from v${CV_NUM} to v${LV_NUM}"
+
+    # Download
+    ARCHIVE_NAME="${BINARY_NAME}-${OS}-${ARCH}.tar.gz"
+    DOWNLOAD_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${VERSION}/${ARCHIVE_NAME}"
+
+    TMPDIR=$(mktemp -d)
+    trap 'rm -rf "$TMPDIR"' EXIT
+
+    log_step "Downloading Oxi-Hole ${VERSION}"
+    ARCHIVE_PATH="${TMPDIR}/${ARCHIVE_NAME}"
+    download "$DOWNLOAD_URL" "$ARCHIVE_PATH"
+
+    if [ ! -f "$ARCHIVE_PATH" ] || [ ! -s "$ARCHIVE_PATH" ]; then
+        log_error "Download failed. Check the URL: ${DOWNLOAD_URL}"
+        exit 1
+    fi
+
+    # Extract
+    tar -xzf "$ARCHIVE_PATH" -C "$TMPDIR"
+    EXTRACTED_BINARY=$(find "$TMPDIR" -name "$BINARY_NAME" -type f | head -1)
+    if [ -z "$EXTRACTED_BINARY" ]; then
+        log_error "Binary '$BINARY_NAME' not found in archive"
+        exit 1
+    fi
+
+    # Backup current binary
+    cp "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}.bak"
+    log_verbose "Backed up current binary to ${INSTALL_DIR}/${BINARY_NAME}.bak"
+
+    # Stop service
+    log_step "Stopping service"
+    stop_service 2>/dev/null || true
+
+    # Replace binary
+    cp "$EXTRACTED_BINARY" "${INSTALL_DIR}/${BINARY_NAME}"
+    chmod 755 "${INSTALL_DIR}/${BINARY_NAME}"
+    chown oxi-hole:oxi-hole "${INSTALL_DIR}/${BINARY_NAME}" 2>/dev/null || true
+    log_info "Binary updated"
+
+    # Restart service
+    log_step "Restarting service"
+    start_service
+
+    verify_running
+
+    log_step "Update complete!"
+    printf "\n"
+    printf "  ${BOLD}Oxi-Hole updated from v${CV_NUM} to v${LV_NUM}${NC}\n"
     printf "\n"
 }
 
@@ -954,6 +1048,8 @@ main() {
 
     if [ "$UNINSTALL" -eq 1 ]; then
         do_uninstall
+    elif [ "$UPDATE" -eq 1 ]; then
+        do_update
     else
         do_install
     fi
