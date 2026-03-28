@@ -13,6 +13,14 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    // Handle --version before anything else
+    if let Some(arg) = std::env::args().nth(1) {
+        if arg == "--version" || arg == "-V" {
+            println!("oxi-hole {}", env!("CARGO_PKG_VERSION"));
+            return Ok(());
+        }
+    }
+
     rustls::crypto::ring::default_provider()
         .install_default()
         .expect("Failed to install rustls crypto provider");
@@ -146,6 +154,12 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Restore enabled features from config
+    for feature_id in &config.blocking.enabled_features {
+        info!("Restoring feature: {}", feature_id);
+        feature_manager.set_feature(feature_id, true).await;
+    }
+
     // Start web server
     let web_state = web::AppState {
         blocklist: blocklist_manager,
@@ -155,6 +169,7 @@ async fn main() -> anyhow::Result<()> {
         auto_update: std::sync::Arc::new(tokio::sync::RwLock::new(config.system.auto_update)),
         update_checker,
         blocklist_update_interval,
+        config_path: config_path.clone(),
     };
 
     let web_listen = config.web.listen.clone();

@@ -276,6 +276,14 @@ impl BlocklistManager {
             .await
             .remove(&normalize_domain(domain));
     }
+
+    pub async fn get_custom_blocked(&self) -> Vec<String> {
+        self.custom_blocked.read().await.iter().cloned().collect()
+    }
+
+    pub async fn get_allowlist(&self) -> Vec<String> {
+        self.allowlist.read().await.iter().cloned().collect()
+    }
 }
 
 fn normalize_domain(domain: &str) -> String {

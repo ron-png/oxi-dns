@@ -293,10 +293,12 @@ do_install() {
     # Check if already installed, compare versions and update if necessary
     if [ -f "${INSTALL_DIR}/${BINARY_NAME}" ] && [ "$REINSTALL" -eq 0 ]; then
         CURRENT_VERSION=$("${INSTALL_DIR}/${BINARY_NAME}" --version 2>/dev/null || echo "unknown")
-        
-        # Extract version numbers
-        CV_NUM=$(echo "$CURRENT_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
-        LV_NUM=$(echo "$VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
+
+        # Extract version numbers (take first match only to avoid matching IPs etc.)
+        CV_NUM=$(echo "$CURRENT_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+        CV_NUM="${CV_NUM:-0.0.0}"
+        LV_NUM=$(echo "$VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+        LV_NUM="${LV_NUM:-0.0.0}"
 
         if [ "$CV_NUM" = "$LV_NUM" ]; then
             log_info "Oxi-Hole is already installed and up to date (version: ${CV_NUM})"
@@ -468,8 +470,10 @@ do_update() {
 
     # Compare versions
     CURRENT_VERSION=$("${INSTALL_DIR}/${BINARY_NAME}" --version 2>/dev/null || echo "unknown")
-    CV_NUM=$(echo "$CURRENT_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
-    LV_NUM=$(echo "$VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
+    CV_NUM=$(echo "$CURRENT_VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+    CV_NUM="${CV_NUM:-0.0.0}"
+    LV_NUM=$(echo "$VERSION" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)
+    LV_NUM="${LV_NUM:-0.0.0}"
 
     if [ "$CV_NUM" = "$LV_NUM" ]; then
         log_info "Already up to date (version: ${CV_NUM})"
@@ -699,7 +703,7 @@ WorkingDirectory=${INSTALL_DIR}
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=${CONFIG_DIR} ${LOG_DIR}
+ReadWritePaths=${INSTALL_DIR} ${CONFIG_DIR} ${LOG_DIR}
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes

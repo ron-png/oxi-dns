@@ -104,6 +104,7 @@ impl UpdateChecker {
 
         info!("Downloading update v{} from {}", latest, download_url);
 
+        // The release assets are .tar.gz archives containing the binary
         let bytes = reqwest::get(&download_url)
             .await
             .map_err(|e| format!("Download failed: {}", e))?
@@ -113,25 +114,41 @@ impl UpdateChecker {
             .await
             .map_err(|e| format!("Failed to read download: {}", e))?;
 
+        // Extract binary from tar.gz archive
+        let binary_bytes = extract_binary_from_tar_gz(&bytes)
+            .map_err(|e| format!("Failed to extract update archive: {}", e))?;
+
         let current_exe =
             std::env::current_exe().map_err(|e| format!("Cannot find current binary: {}", e))?;
-        let backup = current_exe.with_extension("bak");
 
-        // Backup current binary
-        std::fs::copy(&current_exe, &backup)
-            .map_err(|e| format!("Failed to backup current binary: {}", e))?;
+        // Try direct replacement first
+        if let Err(direct_err) = try_replace_binary(&current_exe, &binary_bytes) {
+            // Direct write failed — try writing to /tmp and replacing via rename
+            let tmp_path = std::path::PathBuf::from("/tmp/oxi-hole.update");
+            std::fs::write(&tmp_path, &binary_bytes)
+                .map_err(|e| format!("Failed to write to temp location: {}", e))?;
 
-        // Write new binary
-        std::fs::write(&current_exe, &bytes)
-            .map_err(|e| format!("Failed to write new binary: {}", e))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))
+                    .map_err(|e| format!("Failed to set permissions: {}", e))?;
+            }
 
-        // Make executable on Unix
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let perms = std::fs::Permissions::from_mode(0o755);
-            std::fs::set_permissions(&current_exe, perms)
-                .map_err(|e| format!("Failed to set permissions: {}", e))?;
+            // Try rename (only works on same filesystem)
+            if std::fs::rename(&tmp_path, &current_exe).is_err() {
+                // Different filesystem or read-only — leave in /tmp for manual install
+                return Err(format!(
+                    "Cannot write to {} ({}). New v{} binary saved to {}. \
+                     Install manually: sudo cp {} {}",
+                    current_exe.display(),
+                    direct_err,
+                    latest,
+                    tmp_path.display(),
+                    tmp_path.display(),
+                    current_exe.display()
+                ));
+            }
         }
 
         info!(
@@ -140,6 +157,43 @@ impl UpdateChecker {
         );
         Ok(format!("Updated to v{}. Restart to apply.", latest))
     }
+}
+
+/// Try to backup and replace the binary in-place.
+fn try_replace_binary(
+    current_exe: &std::path::Path,
+    binary_bytes: &[u8],
+) -> Result<(), std::io::Error> {
+    let backup = current_exe.with_extension("bak");
+    std::fs::copy(current_exe, &backup)?;
+    std::fs::write(current_exe, binary_bytes)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(current_exe, std::fs::Permissions::from_mode(0o755))?;
+    }
+
+    Ok(())
+}
+
+/// Extract the binary from a .tar.gz archive. Looks for the first regular file entry.
+fn extract_binary_from_tar_gz(data: &[u8]) -> Result<Vec<u8>, String> {
+    use std::io::Read;
+
+    let gz = flate2::read::GzDecoder::new(data);
+    let mut archive = tar::Archive::new(gz);
+
+    for entry in archive.entries().map_err(|e| e.to_string())? {
+        let mut entry = entry.map_err(|e| e.to_string())?;
+        if entry.header().entry_type().is_file() {
+            let mut buf = Vec::new();
+            entry.read_to_end(&mut buf).map_err(|e| e.to_string())?;
+            return Ok(buf);
+        }
+    }
+
+    Err("No file found in archive".to_string())
 }
 
 async fn fetch_latest_release() -> anyhow::Result<GitHubRelease> {

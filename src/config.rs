@@ -71,6 +71,9 @@ pub struct BlockingConfig {
     /// How often to refresh blocklists, in minutes (0 = disabled)
     #[serde(default = "default_update_interval")]
     pub update_interval_minutes: u64,
+    /// Enabled feature IDs (restored on restart)
+    #[serde(default)]
+    pub enabled_features: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -132,6 +135,7 @@ impl Default for BlockingConfig {
             custom_blocked: Vec::new(),
             allowlist: Vec::new(),
             update_interval_minutes: default_update_interval(),
+            enabled_features: Vec::new(),
         }
     }
 }
@@ -149,6 +153,12 @@ impl Config {
             );
             Ok(Self::default())
         }
+    }
+
+    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+        let content = toml::to_string_pretty(self)?;
+        std::fs::write(path, content)?;
+        Ok(())
     }
 }
 

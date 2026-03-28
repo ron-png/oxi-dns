@@ -1,4 +1,5 @@
 use crate::blocklist::BlocklistManager;
+use crate::config::Config;
 use crate::dns::upstream::UpstreamForwarder;
 use crate::features::FeatureManager;
 use crate::stats::Stats;
@@ -10,6 +11,7 @@ use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
 use serde::{Deserialize, Serialize};
+use std::path::PathBuf;
 use tracing::info;
 
 #[derive(Clone)]
@@ -21,6 +23,42 @@ pub struct AppState {
     pub auto_update: std::sync::Arc<tokio::sync::RwLock<bool>>,
     pub update_checker: UpdateChecker,
     pub blocklist_update_interval: std::sync::Arc<tokio::sync::RwLock<u64>>,
+    pub config_path: PathBuf,
+}
+
+impl AppState {
+    /// Snapshot current runtime state and write it back to the config file.
+    async fn save_config(&self) {
+        // Load existing config to preserve fields we don't manage at runtime
+        // (dns.listen, web.listen, tls paths, timeout_ms, etc.)
+        let mut config = match Config::load(&self.config_path) {
+            Ok(c) => c,
+            Err(e) => {
+                tracing::warn!("Failed to load config for save: {}", e);
+                return;
+            }
+        };
+
+        config.dns.upstreams = self.upstream.get_upstream_labels();
+        config.blocking.enabled = self.blocklist.is_enabled().await;
+        config.blocking.blocklists = self.blocklist.get_sources().await;
+        config.blocking.custom_blocked = self.blocklist.get_custom_blocked().await;
+        config.blocking.allowlist = self.blocklist.get_allowlist().await;
+        config.blocking.update_interval_minutes = *self.blocklist_update_interval.read().await;
+        config.blocking.enabled_features = self
+            .features
+            .get_features()
+            .await
+            .into_iter()
+            .filter(|f| f.enabled)
+            .map(|f| f.id)
+            .collect();
+        config.system.auto_update = *self.auto_update.read().await;
+
+        if let Err(e) = config.save(&self.config_path) {
+            tracing::warn!("Failed to save config: {}", e);
+        }
+    }
 }
 
 pub async fn run_web_server(listen: &str, state: AppState) -> anyhow::Result<()> {
@@ -124,12 +162,14 @@ async fn api_blocking_status(State(state): State<AppState>) -> Json<BlockingStat
 async fn api_enable_blocking(State(state): State<AppState>) -> StatusCode {
     state.blocklist.set_enabled(true).await;
     info!("Blocking enabled via web API");
+    state.save_config().await;
     StatusCode::OK
 }
 
 async fn api_disable_blocking(State(state): State<AppState>) -> StatusCode {
     state.blocklist.set_enabled(false).await;
     info!("Blocking disabled via web API");
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -152,6 +192,7 @@ async fn api_toggle_feature(
     Json(req): Json<FeatureToggleRequest>,
 ) -> StatusCode {
     state.features.set_feature(&id, req.enabled).await;
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -168,6 +209,7 @@ async fn api_add_blocked(
 ) -> StatusCode {
     state.blocklist.add_custom_blocked(&req.domain).await;
     info!("Added {} to blocklist via web API", req.domain);
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -177,6 +219,7 @@ async fn api_remove_blocked(
 ) -> StatusCode {
     state.blocklist.remove_custom_blocked(&req.domain).await;
     info!("Removed {} from blocklist via web API", req.domain);
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -186,6 +229,7 @@ async fn api_add_allowlisted(
 ) -> StatusCode {
     state.blocklist.add_allowlisted(&req.domain).await;
     info!("Added {} to allowlist via web API", req.domain);
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -195,6 +239,7 @@ async fn api_remove_allowlisted(
 ) -> StatusCode {
     state.blocklist.remove_allowlisted(&req.domain).await;
     info!("Removed {} from allowlist via web API", req.domain);
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -215,6 +260,7 @@ async fn api_add_blocklist_source(
 ) -> StatusCode {
     state.blocklist.add_blocklist_source(&req.url).await;
     info!("Added blocklist source: {}", req.url);
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -224,6 +270,7 @@ async fn api_remove_blocklist_source(
 ) -> StatusCode {
     state.blocklist.remove_blocklist_source(&req.url).await;
     info!("Removed blocklist source: {}", req.url);
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -245,6 +292,7 @@ async fn api_add_upstream(
     match state.upstream.add_upstream(&req.upstream) {
         Ok(_) => {
             info!("Added upstream: {}", req.upstream);
+            state.save_config().await;
             StatusCode::OK
         }
         Err(e) => {
@@ -259,6 +307,7 @@ async fn api_remove_upstream(
     Json(req): Json<UpstreamRequest>,
 ) -> StatusCode {
     if state.upstream.remove_upstream(&req.upstream) {
+        state.save_config().await;
         StatusCode::OK
     } else {
         StatusCode::NOT_FOUND
@@ -288,6 +337,7 @@ async fn api_set_auto_update(
 ) -> StatusCode {
     *state.auto_update.write().await = req.enabled;
     tracing::info!("Auto-update set to {}", req.enabled);
+    state.save_config().await;
     StatusCode::OK
 }
 
@@ -321,6 +371,7 @@ async fn api_set_blocklist_interval(
         "Blocklist update interval set to {} minutes",
         req.interval_minutes
     );
+    state.save_config().await;
     StatusCode::OK
 }
 
