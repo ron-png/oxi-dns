@@ -147,7 +147,12 @@ impl UpstreamForwarder {
     }
 
     pub fn get_upstream_labels(&self) -> Vec<String> {
-        self.upstreams.read().unwrap().iter().map(|u| u.label()).collect()
+        self.upstreams
+            .read()
+            .unwrap()
+            .iter()
+            .map(|u| u.label())
+            .collect()
     }
 
     pub fn add_upstream(&self, s: &str) -> anyhow::Result<()> {
