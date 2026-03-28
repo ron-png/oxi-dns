@@ -255,15 +255,11 @@ impl FeatureManager {
         // rewrite entirely, so add the bare domain (and youtube-ui variants)
         // when we detect YouTube rules are present.
         if url == YOUTUBE_SAFE_SEARCH_LIST_URL {
-            let extra = [
-                "youtube.com",
-                "youtubekids.com",
-                "www.youtubekids.com",
-            ];
+            let extra = ["youtube.com", "youtubekids.com", "www.youtubekids.com"];
             for domain in extra {
-                rules
-                    .entry(domain.to_string())
-                    .or_insert_with(|| SafeSearchTarget::Cname("restrictmoderate.youtube.com".to_string()));
+                rules.entry(domain.to_string()).or_insert_with(|| {
+                    SafeSearchTarget::Cname("restrictmoderate.youtube.com".to_string())
+                });
             }
         }
 
