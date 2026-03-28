@@ -1,64 +1,12 @@
 # Oxi-Hole Configuration
+# Configure additional settings via the web dashboard.
 
 [dns]
-# Plain DNS (UDP) listener
-listen = "0.0.0.0:5353"
-
-# DNS-over-TLS listener (uncomment to enable, typically port 853)
-# dot_listen = "0.0.0.0:8853"
-
-# DNS-over-HTTPS listener (uncomment to enable)
-# doh_listen = "0.0.0.0:8443"
-
-# DNS-over-QUIC listener (uncomment to enable)
-# doq_listen = "0.0.0.0:8853"
-
-# Upstream DNS servers
-# Supported protocols:
-#   Plain UDP:  "9.9.9.10:53" or "udp://149.112.112.10:53"
-#   DoT:        "tls://9.9.9.10:853" or "tls://149.112.112.10:853"
-#   DoH:        "https://dns10.quad9.net/dns-query"
-#   DoQ:        "quic://9.9.9.10:853" or "quic://149.112.112.10:853"
+listen = "0.0.0.0:53"
 upstreams = [
-    "tls://9.9.9.10:853",         # Quad9 (DoT, no logging)
-    "tls://149.112.112.10:853",         # Quad9 (DoT, no logging)
-    "https://dns10.quad9.net/dns-query",
-    "quic://unfiltered.adguard-dns.com:853",
+    "tls://9.9.9.10:853",
+    "tls://149.112.112.10:853",
 ]
-
-# Timeout for upstream queries (ms)
-timeout_ms = 5000
 
 [web]
-# Web admin dashboard
 listen = "0.0.0.0:8080"
-
-[tls]
-# TLS certificate and key for DoT/DoH/DoQ listeners.
-# If not set, a self-signed certificate is generated automatically.
-# cert_path = "/path/to/cert.pem"
-# key_path = "/path/to/key.pem"
-
-[blocking]
-enabled = true
-
-# Blocklist URLs (loaded on startup)
-# Supports hosts-file format, domain-only, and adblock-style (||domain^)
-blocklists = [
-    # "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-    # "https://adaway.org/hosts.txt",
-]
-
-# Manually blocked domains
-custom_blocked = [
-    "ads.example.com",
-    "tracker.example.com",
-]
-
-# Allowlisted domains (bypass blocking)
-allowlist = []
-
-[system]
-# Whether to auto-update the server.
-# Warning: An update could cause unforseeable bugs which could lead to the dns service breaking.
-auto_update = false
