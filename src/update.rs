@@ -160,12 +160,18 @@ impl UpdateChecker {
 }
 
 /// Try to backup and replace the binary in-place.
+/// On Linux, a running binary can't be written to (ETXTBSY), but it CAN be
+/// deleted — the running process keeps its file handle. We unlink first,
+/// then write the new binary to the same path.
 fn try_replace_binary(
     current_exe: &std::path::Path,
     binary_bytes: &[u8],
 ) -> Result<(), std::io::Error> {
     let backup = current_exe.with_extension("bak");
     std::fs::copy(current_exe, &backup)?;
+    // Remove the old binary (running process keeps its inode alive)
+    std::fs::remove_file(current_exe)?;
+    // Write new binary to the now-free path
     std::fs::write(current_exe, binary_bytes)?;
 
     #[cfg(unix)]
