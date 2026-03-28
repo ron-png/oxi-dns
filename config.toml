@@ -21,7 +21,7 @@ listen = "0.0.0.0:5353"
 #   DoQ:        "quic://9.9.9.10:853" or "quic://149.112.112.10:853"
 upstreams = [
     "tls://9.9.9.10:853",         # Quad9 (DoT, no logging)
-    "tls://149.112.112.10:853",         # AdGuard (DoT)
+    "tls://149.112.112.10:853",         # Quad9 (DoT, no logging)
     "https://dns10.quad9.net/dns-query",
     "quic://unfiltered.adguard-dns.com:853",
 ]

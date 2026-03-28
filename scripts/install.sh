@@ -512,54 +512,14 @@ create_user() {
 # ============================================================================
 
 create_default_config() {
-    cat > "${CONFIG_DIR}/config.toml" <<'CONFIGEOF'
-# Oxi-Hole Configuration
-# See: https://github.com/ron-png/oxi-hole
+    CONFIG_URL="https://raw.githubusercontent.com/${REPO_OWNER}/${REPO_NAME}/master/config.toml"
+    log_verbose "Downloading default config from ${CONFIG_URL}"
+    download "$CONFIG_URL" "${CONFIG_DIR}/config.toml"
 
-[dns]
-# Plain DNS (UDP)
-listen = "0.0.0.0:53"
-
-# DNS-over-TLS (uncomment to enable)
-# dot_listen = "0.0.0.0:853"
-
-# DNS-over-HTTPS (uncomment to enable)
-# doh_listen = "0.0.0.0:443"
-
-# DNS-over-QUIC (uncomment to enable)
-# doq_listen = "0.0.0.0:853"
-
-# Upstream DNS servers
-# Supported: plain UDP, tls://, https://, quic://
-upstreams = [
-    "tls://9.9.9.10:853",         # Quad9 (DoT, no logging)
-    "tls://149.112.112.10:853",         # AdGuard (DoT)
-    "https://dns10.quad9.net/dns-query",
-    "quic://unfiltered.adguard-dns.com:853",
-]
-timeout_ms = 5000
-
-[web]
-listen = "0.0.0.0:8080"
-
-[tls]
-# Auto-generates self-signed cert if not specified
-# cert_path = "/etc/oxi-hole/cert.pem"
-# key_path = "/etc/oxi-hole/key.pem"
-
-[blocking]
-enabled = true
-
-# Blocklist URLs (uncomment to enable popular lists)
-blocklists = [
-    # "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts",
-    # "https://adaway.org/hosts.txt",
-    # "https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0",
-]
-
-custom_blocked = []
-allowlist = []
-CONFIGEOF
+    if [ ! -s "${CONFIG_DIR}/config.toml" ]; then
+        log_error "Failed to download default config from ${CONFIG_URL}"
+        exit 1
+    fi
 }
 
 # ============================================================================
