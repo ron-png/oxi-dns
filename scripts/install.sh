@@ -522,10 +522,9 @@ listen = "0.0.0.0:53"
 # Upstream DNS servers
 # Supported: plain UDP, tls://, https://, quic://
 upstreams = [
-    "8.8.8.8:53",
-    "8.8.4.4:53",
-    # "tls://1.1.1.1:853",
-    # "https://cloudflare-dns.com/dns-query",
+    "tls://9.9.9.9:853",         # Quad9 (DoT, no logging)
+    "tls://1.1.1.1:853",         # Cloudflare (DoT)
+    # "https://dns.quad9.net/dns-query",
     # "quic://dns.adguard-dns.com:853",
 ]
 timeout_ms = 5000

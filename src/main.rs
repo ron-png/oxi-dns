@@ -83,12 +83,6 @@ async fn main() -> anyhow::Result<()> {
         )
         .await;
 
-    // Initialize features
-    let feature_manager = features::FeatureManager::new(blocklist_manager.clone());
-
-    // Initialize stats
-    let stats = stats::Stats::new(10_000);
-
     // Build upstream forwarder
     let upstream = dns::upstream::UpstreamForwarder::new(
         &config.dns.upstreams,
@@ -96,6 +90,13 @@ async fn main() -> anyhow::Result<()> {
         client_tls_config,
         quic_client_config,
     )?;
+
+    // Initialize features (with upstream reference for root servers toggle)
+    let mut feature_manager = features::FeatureManager::new(blocklist_manager.clone());
+    feature_manager.set_upstream(upstream.clone());
+
+    // Initialize stats
+    let stats = stats::Stats::new(10_000);
 
     // Start DNS server (all protocols)
     let dns_server = dns::DnsServer::new(

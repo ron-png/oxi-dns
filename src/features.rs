@@ -1,4 +1,5 @@
 use crate::blocklist::BlocklistManager;
+use crate::dns::upstream::UpstreamForwarder;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -67,6 +68,7 @@ pub struct FeatureManager {
     features: Arc<RwLock<Vec<FeatureDefinition>>>,
     safe_search_enabled: Arc<RwLock<bool>>,
     blocklist: BlocklistManager,
+    upstream: Option<UpstreamForwarder>,
 }
 
 impl FeatureManager {
@@ -120,13 +122,27 @@ impl FeatureManager {
                 blocklist_url: Some(BLOCKLIST_CRYPTO_MINING.to_string()),
                 enabled: false,
             },
+            FeatureDefinition {
+                id: "root_servers".to_string(),
+                name: "Use Root DNS Servers".to_string(),
+                description: "Resolve domains directly via root servers instead of third-party resolvers. Maximum privacy — no upstream sees all your queries.".to_string(),
+                icon: "globe".to_string(),
+                blocklist_url: None,
+                enabled: false,
+            },
         ];
 
         Self {
             features: Arc::new(RwLock::new(features)),
             safe_search_enabled: Arc::new(RwLock::new(false)),
             blocklist,
+            upstream: None,
         }
+    }
+
+    /// Set the upstream forwarder reference (must be called before toggling root_servers).
+    pub fn set_upstream(&mut self, upstream: UpstreamForwarder) {
+        self.upstream = Some(upstream);
     }
 
     pub async fn get_features(&self) -> Vec<FeatureDefinition> {
@@ -164,6 +180,20 @@ impl FeatureManager {
                 "Safe search {}",
                 if enabled { "enabled" } else { "disabled" }
             );
+            return;
+        }
+
+        // Handle root servers toggle
+        if feature_id == "root_servers" {
+            if let Some(ref upstream) = self.upstream {
+                upstream.set_use_root_servers(enabled);
+                info!(
+                    "Root DNS servers {}",
+                    if enabled { "enabled" } else { "disabled" }
+                );
+            } else {
+                warn!("Cannot toggle root servers: upstream forwarder not set");
+            }
             return;
         }
 

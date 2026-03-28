@@ -1,9 +1,29 @@
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tracing::warn;
+
+/// DNS root server addresses (IPv4).
+const ROOT_SERVERS: &[Ipv4Addr] = &[
+    Ipv4Addr::new(198, 41, 0, 4),     // a.root-servers.net
+    Ipv4Addr::new(199, 9, 14, 201),   // b.root-servers.net
+    Ipv4Addr::new(192, 33, 4, 12),    // c.root-servers.net
+    Ipv4Addr::new(199, 7, 91, 13),    // d.root-servers.net
+    Ipv4Addr::new(192, 203, 230, 10), // e.root-servers.net
+    Ipv4Addr::new(192, 5, 5, 241),    // f.root-servers.net
+    Ipv4Addr::new(192, 112, 36, 4),   // g.root-servers.net
+    Ipv4Addr::new(198, 97, 190, 53),  // h.root-servers.net
+    Ipv4Addr::new(192, 36, 148, 17),  // i.root-servers.net
+    Ipv4Addr::new(192, 58, 128, 30),  // j.root-servers.net
+    Ipv4Addr::new(193, 0, 14, 129),   // k.root-servers.net
+    Ipv4Addr::new(199, 7, 83, 42),    // l.root-servers.net
+    Ipv4Addr::new(202, 12, 27, 33),   // m.root-servers.net
+];
+
+const MAX_REFERRAL_DEPTH: usize = 10;
 
 /// Parsed upstream server specification.
 #[derive(Debug, Clone)]
@@ -83,6 +103,7 @@ pub struct UpstreamForwarder {
     timeout: Duration,
     tls_client_config: Arc<rustls::ClientConfig>,
     quic_client_config: quinn::ClientConfig,
+    use_root_servers: Arc<AtomicBool>,
 }
 
 impl UpstreamForwarder {
@@ -112,12 +133,25 @@ impl UpstreamForwarder {
             timeout: Duration::from_millis(timeout_ms),
             tls_client_config,
             quic_client_config,
+            use_root_servers: Arc::new(AtomicBool::new(false)),
         })
+    }
+
+    pub fn set_use_root_servers(&self, enabled: bool) {
+        self.use_root_servers.store(enabled, Ordering::Relaxed);
+    }
+
+    pub fn is_using_root_servers(&self) -> bool {
+        self.use_root_servers.load(Ordering::Relaxed)
     }
 
     /// Forward a DNS query to upstream servers, trying each in order.
     /// Returns (response_bytes, upstream_label).
     pub async fn forward(&self, packet: &[u8]) -> anyhow::Result<(Vec<u8>, String)> {
+        if self.use_root_servers.load(Ordering::Relaxed) {
+            return self.forward_iterative(packet).await;
+        }
+
         for upstream in &self.upstreams {
             let result = match upstream {
                 UpstreamSpec::Udp(addr) => self.forward_udp(packet, *addr).await,
@@ -138,6 +172,83 @@ impl UpstreamForwarder {
             }
         }
         anyhow::bail!("All upstream DNS servers failed")
+    }
+
+    /// Iterative resolution starting from root servers.
+    async fn forward_iterative(&self, packet: &[u8]) -> anyhow::Result<(Vec<u8>, String)> {
+        use hickory_proto::op::{Message, ResponseCode};
+        use hickory_proto::rr::{RData, RecordType};
+        use hickory_proto::serialize::binary::BinDecodable;
+
+        let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
+            .iter()
+            .map(|ip| SocketAddr::new(IpAddr::V4(*ip), 53))
+            .collect();
+
+        let mut last_label = "root".to_string();
+
+        for depth in 0..MAX_REFERRAL_DEPTH {
+            let server = current_servers[depth % current_servers.len()];
+
+            let response_bytes = match self.forward_udp(packet, server).await {
+                Ok(bytes) => bytes,
+                Err(e) => {
+                    warn!("Iterative: {} failed: {}", server, e);
+                    continue;
+                }
+            };
+
+            let response = Message::from_bytes(&response_bytes)?;
+
+            // Got answers, NXDOMAIN, or no further referrals — return as-is
+            if !response.answers().is_empty()
+                || response.response_code() != ResponseCode::NoError
+                || response.name_servers().is_empty()
+            {
+                return Ok((response_bytes, format!("iterative({})", last_label)));
+            }
+
+            // Extract NS names from authority section
+            let ns_names: Vec<String> = response
+                .name_servers()
+                .iter()
+                .filter_map(|r| match r.data() {
+                    Some(RData::NS(ns)) => Some(ns.0.to_ascii()),
+                    _ => None,
+                })
+                .collect();
+
+            if ns_names.is_empty() {
+                return Ok((response_bytes, format!("iterative({})", last_label)));
+            }
+
+            // Extract glue A records from additional section
+            let mut next_servers = Vec::new();
+            for record in response.additionals() {
+                if record.record_type() == RecordType::A {
+                    if let Some(RData::A(ip)) = record.data() {
+                        let name = record.name().to_ascii();
+                        if ns_names.iter().any(|ns| ns == &name) {
+                            next_servers
+                                .push(SocketAddr::new(IpAddr::V4(ip.0), 53));
+                        }
+                    }
+                }
+            }
+
+            if next_servers.is_empty() {
+                // No glue records — return the referral response
+                return Ok((response_bytes, format!("iterative({})", last_label)));
+            }
+
+            last_label = ns_names
+                .first()
+                .cloned()
+                .unwrap_or_else(|| server.to_string());
+            current_servers = next_servers;
+        }
+
+        anyhow::bail!("Iterative resolution: max referral depth exceeded")
     }
 
     /// Plain UDP forwarding.

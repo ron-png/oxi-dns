@@ -103,7 +103,10 @@ fn default_web_listen() -> String {
 }
 
 fn default_upstreams() -> Vec<String> {
-    vec!["8.8.8.8:53".to_string(), "8.8.4.4:53".to_string()]
+    vec![
+        "tls://9.9.9.9:853".to_string(),
+        "tls://1.1.1.1:853".to_string(),
+    ]
 }
 
 fn default_timeout_ms() -> u64 {
