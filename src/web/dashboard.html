@@ -840,6 +840,8 @@
                                 Updates</button>
                             <button class="btn btn-green btn-sm" id="doUpdateBtn" onclick="performUpdate()"
                                 style="display: none;">Update</button>
+                            <button class="btn btn-green btn-sm" id="restartBtn" onclick="performRestart()"
+                                style="display: none;">Restart Now</button>
                         </div>
                     </div>
                     <div id="updateMessage"></div>
@@ -1350,12 +1352,40 @@
                 msg.style.color = data.success ? 'var(--color-green)' : 'var(--color-red)';
                 if (data.success) {
                     btn.style.display = 'none';
+                    document.getElementById('restartBtn').style.display = 'inline-block';
                 }
             } catch (e) {
                 msg.textContent = 'Update failed: ' + e.message;
                 msg.style.color = 'var(--color-red)';
             }
             btn.disabled = false;
+        }
+
+        async function performRestart() {
+            const btn = document.getElementById('restartBtn');
+            const msg = document.getElementById('updateMessage');
+            btn.disabled = true;
+            btn.textContent = 'Restarting...';
+            msg.textContent = 'Restarting server...';
+            msg.style.color = 'var(--text-muted)';
+            try {
+                await fetch('/api/system/restart', { method: 'POST' });
+            } catch (e) {
+                // Expected — server shuts down mid-request
+            }
+            msg.textContent = 'Waiting for server to come back...';
+            // Poll until the server is reachable again
+            const poll = setInterval(async () => {
+                try {
+                    const res = await fetch('/api/stats', { signal: AbortSignal.timeout(2000) });
+                    if (res.ok) {
+                        clearInterval(poll);
+                        window.location.reload();
+                    }
+                } catch (e) {
+                    // Still down, keep polling
+                }
+            }, 1500);
         }
 
         // ---- Auto-refresh ----

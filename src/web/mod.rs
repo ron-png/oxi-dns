@@ -107,6 +107,7 @@ pub async fn run_web_server(listen: &str, state: AppState) -> anyhow::Result<()>
         .route("/api/system/version", get(api_version))
         .route("/api/system/version/check", post(api_version_check))
         .route("/api/system/update", post(api_perform_update))
+        .route("/api/system/restart", post(api_restart))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
@@ -402,4 +403,15 @@ async fn api_perform_update(State(state): State<AppState>) -> Json<UpdateRespons
             message: msg,
         }),
     }
+}
+
+async fn api_restart() -> StatusCode {
+    info!("Restart requested via web API");
+    // Spawn a short delay so the HTTP response can be sent before we exit.
+    // The service manager (systemd Restart=always) will restart the process.
+    tokio::spawn(async {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        std::process::exit(0);
+    });
+    StatusCode::OK
 }
