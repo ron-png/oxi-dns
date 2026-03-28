@@ -28,6 +28,7 @@ pub struct DnsServer {
 }
 
 impl DnsServer {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: DnsConfig,
         blocklist: BlocklistManager,
@@ -114,8 +115,7 @@ impl DnsServer {
                 let bm = self.blocking_mode.clone();
                 info!("Starting DNS-over-QUIC on {}", addr);
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = listener_doq::run(addr, bl, st, up, ft, bm, quic_config).await
-                    {
+                    if let Err(e) = listener_doq::run(addr, bl, st, up, ft, bm, quic_config).await {
                         tracing::error!("DoQ listener error: {}", e);
                     }
                 }));

@@ -44,10 +44,9 @@ pub async fn run(
                                 let cip = client_ip.clone();
 
                                 tokio::spawn(async move {
-                                    if let Err(e) = handle_doq_stream(
-                                        send, recv, &cip, &bl, &st, &up, &ft, &bm,
-                                    )
-                                    .await
+                                    if let Err(e) =
+                                        handle_doq_stream(send, recv, &cip, &bl, &st, &up, &ft, &bm)
+                                            .await
                                     {
                                         debug!("DoQ stream error from {}: {}", cip, e);
                                     }
@@ -71,6 +70,7 @@ pub async fn run(
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn handle_doq_stream(
     mut send: quinn::SendStream,
     mut recv: quinn::RecvStream,

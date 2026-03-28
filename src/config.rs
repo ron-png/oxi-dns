@@ -3,10 +3,11 @@ use std::net::{Ipv4Addr, Ipv6Addr};
 use std::path::Path;
 
 /// How blocked domains are responded to.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "mode", content = "value")]
 pub enum BlockingMode {
     /// Adblock-style → 0.0.0.0/::; hosts-style → IP from the rule.
+    #[default]
     Default,
     /// Respond with DNS REFUSED rcode.
     Refused,
@@ -15,10 +16,7 @@ pub enum BlockingMode {
     /// Always respond with 0.0.0.0 (A) / :: (AAAA).
     NullIp,
     /// Respond with user-specified IPs.
-    CustomIp {
-        ipv4: Ipv4Addr,
-        ipv6: Ipv6Addr,
-    },
+    CustomIp { ipv4: Ipv4Addr, ipv6: Ipv6Addr },
 }
 
 impl std::fmt::Display for BlockingMode {
@@ -30,12 +28,6 @@ impl std::fmt::Display for BlockingMode {
             BlockingMode::NullIp => write!(f, "null_ip"),
             BlockingMode::CustomIp { ipv4, ipv6 } => write!(f, "custom_ip({}, {})", ipv4, ipv6),
         }
-    }
-}
-
-impl Default for BlockingMode {
-    fn default() -> Self {
-        BlockingMode::Default
     }
 }
 
