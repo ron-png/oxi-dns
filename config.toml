@@ -15,15 +15,15 @@ listen = "0.0.0.0:5353"
 
 # Upstream DNS servers
 # Supported protocols:
-#   Plain UDP:  "8.8.8.8:53" or "udp://8.8.8.8:53"
-#   DoT:        "tls://1.1.1.1:853"
-#   DoH:        "https://dns.google/dns-query"
-#   DoQ:        "quic://dns.adguard-dns.com:853"
+#   Plain UDP:  "9.9.9.10:53" or "udp://149.112.112.10:53"
+#   DoT:        "tls://9.9.9.10:853" or "tls://149.112.112.10:853"
+#   DoH:        "https://dns10.quad9.net/dns-query"
+#   DoQ:        "quic://9.9.9.10:853" or "quic://149.112.112.10:853"
 upstreams = [
-    "tls://9.9.9.9:853",         # Quad9 (DoT, no logging)
-    "tls://1.1.1.1:853",         # Cloudflare (DoT)
-    # "https://dns.quad9.net/dns-query",
-    # "quic://dns.adguard-dns.com:853",
+    "tls://9.9.9.10:853",         # Quad9 (DoT, no logging)
+    "tls://149.112.112.10:853",         # AdGuard (DoT)
+    "https://dns10.quad9.net/dns-query",
+    "quic://unfiltered.adguard-dns.com:853",
 ]
 
 # Timeout for upstream queries (ms)

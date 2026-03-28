@@ -28,13 +28,13 @@ const MAX_REFERRAL_DEPTH: usize = 10;
 /// Parsed upstream server specification.
 #[derive(Debug, Clone)]
 pub enum UpstreamSpec {
-    /// Plain UDP DNS (e.g., "8.8.8.8:53" or "udp://8.8.8.8:53")
+    /// Plain UDP DNS (e.g., "9.9.9.10:53" or "udp://149.112.112.10:53")
     Udp(SocketAddr),
-    /// DNS-over-TLS (e.g., "tls://1.1.1.1:853" or "tls://dns.google:853")
+    /// DNS-over-TLS (e.g., "tls://9.9.9.10:853" or "tls://149.112.112.10:853")
     Tls { addr: SocketAddr, hostname: String },
-    /// DNS-over-HTTPS (e.g., "https://dns.google/dns-query")
+    /// DNS-over-HTTPS (e.g., "https://dns10.quad9.net/dns-query")
     Https { url: String },
-    /// DNS-over-QUIC (e.g., "quic://dns.adguard-dns.com:853")
+    /// DNS-over-QUIC (e.g., "quic://9.9.9.10:853" or "quic://149.112.112.10:853")
     Quic { addr: SocketAddr, hostname: String },
 }
 
