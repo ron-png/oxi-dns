@@ -39,16 +39,18 @@ pub async fn process_dns_query(
     // Check safe search rewriting (only for A queries)
     if query_type == RecordType::A {
         if let Some(target) = features.get_safe_search_target(domain_trimmed).await {
-            let safe_ip = match &target {
-                SafeSearchTarget::A(ip) => Some(*ip),
+            let response = match &target {
+                SafeSearchTarget::A(ip) => {
+                    debug!("Safe search rewrite: {} -> {}", domain_trimmed, ip);
+                    Some(build_safe_search_response(&request, &domain, *ip))
+                }
                 SafeSearchTarget::Cname(cname) => {
-                    // Resolve the CNAME target via upstream
-                    resolve_cname_to_ip(upstream, cname).await
+                    debug!("Safe search CNAME rewrite: {} -> {}", domain_trimmed, cname);
+                    build_cname_rewrite_response(&request, &domain, cname, upstream).await
                 }
             };
 
-            if let Some(ip) = safe_ip {
-                let response = build_safe_search_response(&request, &domain, ip);
+            if let Some(response) = response {
                 let response_bytes = response.to_vec()?;
 
                 stats.record_query(QueryLogEntry {
@@ -61,7 +63,6 @@ pub async fn process_dns_query(
                     upstream: Some("safe-search".to_string()),
                 });
 
-                debug!("Safe search rewrite: {} -> {}", domain_trimmed, ip);
                 return Ok(response_bytes);
             }
         }
@@ -103,7 +104,7 @@ pub async fn process_dns_query(
 }
 
 /// Build a safe search response that returns a specific IP.
-fn build_safe_search_response(request: &Message, domain: &str, ip: std::net::Ipv4Addr) -> Message {
+fn build_safe_search_response(request: &Message, domain: &str, ip: Ipv4Addr) -> Message {
     let mut response = Message::new();
     let mut header = Header::new();
     header.set_id(request.header().id());
@@ -162,37 +163,71 @@ fn build_blocked_response(request: &Message, domain: &str, query_type: RecordTyp
     response
 }
 
-/// Resolve a CNAME target to an IPv4 address by building and forwarding a DNS query.
-async fn resolve_cname_to_ip(upstream: &UpstreamForwarder, cname: &str) -> Option<Ipv4Addr> {
+/// Build a CNAME rewrite response: returns CNAME record + resolved A records.
+/// This is needed for safe search enforcement (e.g. YouTube restricted mode)
+/// where the client must see the CNAME in the response.
+async fn build_cname_rewrite_response(
+    request: &Message,
+    domain: &str,
+    cname: &str,
+    upstream: &UpstreamForwarder,
+) -> Option<Message> {
     use hickory_proto::op::Query;
 
-    let name = Name::from_ascii(format!("{}.", cname)).ok()?;
-    let mut request = Message::new();
-    let mut header = Header::new();
-    header.set_id(
+    // Resolve the CNAME target via upstream
+    let cname_fqdn = format!("{}.", cname);
+    let target_name = Name::from_ascii(cname_fqdn).ok()?;
+
+    let mut resolve_req = Message::new();
+    let mut hdr = Header::new();
+    hdr.set_id(
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.subsec_nanos() as u16)
             .unwrap_or(1234),
     );
-    header.set_message_type(MessageType::Query);
-    header.set_op_code(OpCode::Query);
-    header.set_recursion_desired(true);
-    request.set_header(header);
+    hdr.set_message_type(MessageType::Query);
+    hdr.set_op_code(OpCode::Query);
+    hdr.set_recursion_desired(true);
+    resolve_req.set_header(hdr);
 
     let mut query = Query::new();
-    query.set_name(name);
+    query.set_name(target_name.clone());
     query.set_query_type(RecordType::A);
-    request.add_query(query);
+    resolve_req.add_query(query);
 
-    let packet = request.to_vec().ok()?;
+    let packet = resolve_req.to_vec().ok()?;
     let (response_bytes, _) = upstream.forward(&packet).await.ok()?;
-    let response = Message::from_bytes(&response_bytes).ok()?;
+    let upstream_resp = Message::from_bytes(&response_bytes).ok()?;
 
-    for answer in response.answers() {
-        if let RData::A(ip) = answer.data() {
-            return Some(ip.0);
+    // Build our response with CNAME + A records
+    let mut response = Message::new();
+    let mut header = Header::new();
+    header.set_id(request.header().id());
+    header.set_message_type(MessageType::Response);
+    header.set_op_code(OpCode::Query);
+    header.set_authoritative(true);
+    header.set_recursion_desired(request.header().recursion_desired());
+    header.set_recursion_available(true);
+    header.set_response_code(ResponseCode::NoError);
+    response.set_header(header);
+
+    for q in request.queries() {
+        response.add_query(q.clone());
+    }
+
+    // Add CNAME record: domain -> cname target
+    let orig_name = Name::from_ascii(domain).unwrap_or_default();
+    let cname_rdata = RData::CNAME(hickory_proto::rr::rdata::CNAME(target_name));
+    let cname_record = Record::from_rdata(orig_name, 60, cname_rdata);
+    response.add_answer(cname_record);
+
+    // Add A records from upstream resolution of the CNAME target
+    for answer in upstream_resp.answers() {
+        if let RData::A(_) = answer.data() {
+            response.add_answer(answer.clone());
         }
     }
-    None
+
+    Some(response)
 }
