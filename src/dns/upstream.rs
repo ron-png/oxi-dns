@@ -146,33 +146,67 @@ impl UpstreamForwarder {
         self.use_root_servers.load(Ordering::Relaxed)
     }
 
-    /// Forward a DNS query to upstream servers, trying each in order.
-    /// Returns (response_bytes, upstream_label).
+    /// Forward a DNS query to upstream servers.
+    /// When multiple upstreams are configured, queries all in parallel and
+    /// returns the fastest successful response.
     pub async fn forward(&self, packet: &[u8]) -> anyhow::Result<(Vec<u8>, String)> {
         if self.use_root_servers.load(Ordering::Relaxed) {
             return self.forward_iterative(packet).await;
         }
 
-        for upstream in &self.upstreams {
-            let result = match upstream {
-                UpstreamSpec::Udp(addr) => self.forward_udp(packet, *addr).await,
-                UpstreamSpec::Tls { addr, hostname } => {
-                    self.forward_dot(packet, *addr, hostname).await
-                }
-                UpstreamSpec::Https { url } => self.forward_doh(packet, url).await,
-                UpstreamSpec::Quic { addr, hostname } => {
-                    self.forward_doq(packet, *addr, hostname).await
-                }
-            };
+        if self.upstreams.len() == 1 {
+            let upstream = &self.upstreams[0];
+            let response = self.forward_single(packet, upstream).await?;
+            return Ok((response, upstream.label()));
+        }
 
+        // Query all upstreams in parallel, return the fastest success
+        let (tx, mut rx) = tokio::sync::mpsc::channel(self.upstreams.len());
+
+        for upstream in &self.upstreams {
+            let tx = tx.clone();
+            let forwarder = self.clone();
+            let packet = packet.to_vec();
+            let label = upstream.label();
+            let upstream = upstream.clone();
+
+            tokio::spawn(async move {
+                let result = forwarder.forward_single(&packet, &upstream).await;
+                let _ = tx.send((result, label)).await;
+            });
+        }
+        drop(tx);
+
+        let mut last_err = None;
+        while let Some((result, label)) = rx.recv().await {
             match result {
-                Ok(response) => return Ok((response, upstream.label())),
+                Ok(response) => return Ok((response, label)),
                 Err(e) => {
-                    warn!("Upstream {} failed: {}", upstream.label(), e);
+                    warn!("Upstream {} failed: {}", label, e);
+                    last_err = Some(e);
                 }
             }
         }
-        anyhow::bail!("All upstream DNS servers failed")
+
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("All upstream DNS servers failed")))
+    }
+
+    /// Forward a DNS query to a single upstream server.
+    async fn forward_single(
+        &self,
+        packet: &[u8],
+        upstream: &UpstreamSpec,
+    ) -> anyhow::Result<Vec<u8>> {
+        match upstream {
+            UpstreamSpec::Udp(addr) => self.forward_udp(packet, *addr).await,
+            UpstreamSpec::Tls { addr, hostname } => {
+                self.forward_dot(packet, *addr, hostname).await
+            }
+            UpstreamSpec::Https { url } => self.forward_doh(packet, url).await,
+            UpstreamSpec::Quic { addr, hostname } => {
+                self.forward_doq(packet, *addr, hostname).await
+            }
+        }
     }
 
     /// Iterative resolution starting from root servers.
