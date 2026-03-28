@@ -303,6 +303,20 @@
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
+                <div style="margin-top: 0.75rem; padding: 0.75rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.5rem;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <span style="font-size: 0.85rem; color: #94a3b8;">Version: </span>
+                            <span id="currentVersion" style="font-size: 0.85rem; color: #e2e8f0; font-family: monospace;">...</span>
+                            <span id="versionStatus" style="font-size: 0.78rem; margin-left: 0.5rem;"></span>
+                        </div>
+                        <div style="display: flex; gap: 0.5rem;">
+                            <button class="btn btn-blue" id="checkUpdateBtn" onclick="checkForUpdates()" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;">Check for Updates</button>
+                            <button class="btn btn-green" id="doUpdateBtn" onclick="performUpdate()" style="font-size: 0.78rem; padding: 0.3rem 0.7rem; display: none;">Update</button>
+                        </div>
+                    </div>
+                    <div id="updateMessage" style="font-size: 0.78rem; color: #94a3b8; margin-top: 0.4rem; display: none;"></div>
+                </div>
             </div>
 
             <div class="section">
@@ -331,6 +345,15 @@
                     <button class="btn btn-red" onclick="removeBlocklistUrl()">Remove</button>
                 </div>
                 <div id="activeBlocklists" class="info-box">Loading...</div>
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 0.75rem;">
+                    <div>
+                        <span style="font-size: 0.85rem; color: #94a3b8;">Auto-refresh interval: </span>
+                        <input type="number" id="blocklistIntervalInput" min="0" style="width: 4rem; padding: 0.25rem 0.4rem; background: #0f172a; border: 1px solid #334155; border-radius: 0.25rem; color: #e2e8f0; font-size: 0.85rem; font-family: monospace;" />
+                        <span style="font-size: 0.85rem; color: #94a3b8;"> minutes</span>
+                        <span style="font-size: 0.72rem; color: #64748b; margin-left: 0.3rem;">(0 = disabled)</span>
+                    </div>
+                    <button class="btn btn-blue" onclick="setBlocklistInterval()" style="font-size: 0.78rem; padding: 0.3rem 0.7rem;">Save</button>
+                </div>
             </div>
 
             <div class="section">
@@ -593,9 +616,37 @@
                 if (sources.length === 0) {
                     el.textContent = 'No custom blocklist URLs loaded.';
                 } else {
-                    el.innerHTML = sources.map(s => `<div style="margin-bottom:0.25rem;">&#8226; <code>${s}</code></div>`).join('');
+                    el.textContent = '';
+                    sources.forEach(s => {
+                        const div = document.createElement('div');
+                        div.style.marginBottom = '0.25rem';
+                        div.textContent = '\u2022 ' + s;
+                        div.style.fontFamily = 'monospace';
+                        div.style.fontSize = '0.8rem';
+                        el.appendChild(div);
+                    });
                 }
             } catch(e) { console.error(e); }
+            refreshBlocklistInterval();
+        }
+
+        async function refreshBlocklistInterval() {
+            try {
+                const res = await fetch('/api/system/blocklist-interval');
+                const data = await res.json();
+                document.getElementById('blocklistIntervalInput').value = data.interval_minutes;
+            } catch(e) { console.error(e); }
+        }
+
+        async function setBlocklistInterval() {
+            const input = document.getElementById('blocklistIntervalInput');
+            const interval_minutes = parseInt(input.value, 10);
+            if (isNaN(interval_minutes) || interval_minutes < 0) return;
+            await fetch('/api/system/blocklist-interval', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ interval_minutes })
+            });
         }
 
         async function refreshUpstreams() {
@@ -640,6 +691,7 @@
                 const data = await res.json();
                 document.getElementById('autoUpdateCheckbox').checked = data.enabled;
             } catch(e) { console.error('Failed to load auto-update state', e); }
+            refreshVersion();
         }
 
         async function toggleAutoUpdate(enabled) {
@@ -657,6 +709,76 @@
                 document.getElementById('autoUpdateCheckbox').checked = !enabled; // Revert
             }
             toggle.classList.remove('loading');
+        }
+
+        // ---- Version / Update ----
+        async function refreshVersion() {
+            try {
+                const res = await fetch('/api/system/version');
+                const info = await res.json();
+                showVersionInfo(info);
+            } catch(e) { console.error('Failed to load version info', e); }
+        }
+
+        function showVersionInfo(info) {
+            document.getElementById('currentVersion').textContent = 'v' + info.current_version;
+            const status = document.getElementById('versionStatus');
+            const updateBtn = document.getElementById('doUpdateBtn');
+            const msg = document.getElementById('updateMessage');
+            if (info.update_available && info.latest_version) {
+                status.textContent = '→ v' + info.latest_version + ' available';
+                status.style.color = '#22c55e';
+                updateBtn.style.display = 'inline-block';
+                updateBtn.textContent = 'Update to v' + info.latest_version;
+                msg.style.display = 'none';
+            } else if (info.latest_version) {
+                status.textContent = '(up to date)';
+                status.style.color = '#94a3b8';
+                updateBtn.style.display = 'none';
+                msg.style.display = 'none';
+            } else {
+                status.textContent = '';
+                updateBtn.style.display = 'none';
+                msg.style.display = 'none';
+            }
+        }
+
+        async function checkForUpdates() {
+            const btn = document.getElementById('checkUpdateBtn');
+            btn.disabled = true;
+            btn.textContent = 'Checking...';
+            try {
+                const res = await fetch('/api/system/version/check', { method: 'POST' });
+                const info = await res.json();
+                showVersionInfo(info);
+            } catch(e) {
+                console.error(e);
+            }
+            btn.disabled = false;
+            btn.textContent = 'Check for Updates';
+        }
+
+        async function performUpdate() {
+            const btn = document.getElementById('doUpdateBtn');
+            const msg = document.getElementById('updateMessage');
+            btn.disabled = true;
+            btn.textContent = 'Updating...';
+            msg.style.display = 'block';
+            msg.textContent = 'Downloading update...';
+            msg.style.color = '#94a3b8';
+            try {
+                const res = await fetch('/api/system/update', { method: 'POST' });
+                const data = await res.json();
+                msg.textContent = data.message;
+                msg.style.color = data.success ? '#22c55e' : '#ef4444';
+                if (data.success) {
+                    btn.style.display = 'none';
+                }
+            } catch(e) {
+                msg.textContent = 'Update failed: ' + e.message;
+                msg.style.color = '#ef4444';
+            }
+            btn.disabled = false;
         }
 
         // ---- Auto-refresh ----

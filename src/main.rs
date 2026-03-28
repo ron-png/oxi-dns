@@ -4,6 +4,7 @@ mod dns;
 mod features;
 mod stats;
 mod tls;
+mod update;
 mod web;
 
 use config::Config;
@@ -29,7 +30,10 @@ async fn main() -> anyhow::Result<()> {
 
     let config = Config::load(&config_path)?;
 
-    info!("Starting Oxi-Hole DNS server v0.3.0");
+    info!(
+        "Starting Oxi-Hole DNS server v{}",
+        env!("CARGO_PKG_VERSION")
+    );
     info!("DNS (UDP) listen: {}", config.dns.listen);
     if let Some(ref dot) = config.dns.dot_listen {
         info!("DNS-over-TLS listen: {}", dot);
@@ -116,6 +120,32 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
+    // Initialize update checker
+    let update_checker = update::UpdateChecker::new();
+
+    // Blocklist refresh interval (shared so web UI can change it)
+    let blocklist_update_interval = std::sync::Arc::new(tokio::sync::RwLock::new(
+        config.blocking.update_interval_minutes,
+    ));
+
+    // Spawn background blocklist refresh task
+    {
+        let bm = blocklist_manager.clone();
+        let interval_lock = blocklist_update_interval.clone();
+        tokio::spawn(async move {
+            loop {
+                let minutes = *interval_lock.read().await;
+                if minutes == 0 {
+                    // Disabled — check again in 60s to see if user re-enabled
+                    tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+                    continue;
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(minutes * 60)).await;
+                bm.refresh_sources().await;
+            }
+        });
+    }
+
     // Start web server
     let web_state = web::AppState {
         blocklist: blocklist_manager,
@@ -123,6 +153,8 @@ async fn main() -> anyhow::Result<()> {
         features: feature_manager,
         upstream: upstream_for_web,
         auto_update: std::sync::Arc::new(tokio::sync::RwLock::new(config.system.auto_update)),
+        update_checker,
+        blocklist_update_interval,
     };
 
     let web_listen = config.web.listen.clone();

@@ -2,6 +2,7 @@ use crate::blocklist::BlocklistManager;
 use crate::dns::upstream::UpstreamForwarder;
 use crate::features::FeatureManager;
 use crate::stats::Stats;
+use crate::update::UpdateChecker;
 use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::Html;
@@ -18,6 +19,8 @@ pub struct AppState {
     pub features: FeatureManager,
     pub upstream: UpstreamForwarder,
     pub auto_update: std::sync::Arc<tokio::sync::RwLock<bool>>,
+    pub update_checker: UpdateChecker,
+    pub blocklist_update_interval: std::sync::Arc<tokio::sync::RwLock<u64>>,
 }
 
 pub async fn run_web_server(listen: &str, state: AppState) -> anyhow::Result<()> {
@@ -53,6 +56,19 @@ pub async fn run_web_server(listen: &str, state: AppState) -> anyhow::Result<()>
         // System settings
         .route("/api/system/auto-update", get(api_get_auto_update))
         .route("/api/system/auto-update", post(api_set_auto_update))
+        // Blocklist update interval
+        .route(
+            "/api/system/blocklist-interval",
+            get(api_get_blocklist_interval),
+        )
+        .route(
+            "/api/system/blocklist-interval",
+            post(api_set_blocklist_interval),
+        )
+        // Version / update
+        .route("/api/system/version", get(api_version))
+        .route("/api/system/version/check", post(api_version_check))
+        .route("/api/system/update", post(api_perform_update))
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(listen).await?;
@@ -273,4 +289,66 @@ async fn api_set_auto_update(
     *state.auto_update.write().await = req.enabled;
     tracing::info!("Auto-update set to {}", req.enabled);
     StatusCode::OK
+}
+
+// ==================== Blocklist Update Interval ====================
+
+#[derive(Serialize)]
+struct BlocklistIntervalResponse {
+    interval_minutes: u64,
+}
+
+async fn api_get_blocklist_interval(
+    State(state): State<AppState>,
+) -> Json<BlocklistIntervalResponse> {
+    let interval = *state.blocklist_update_interval.read().await;
+    Json(BlocklistIntervalResponse {
+        interval_minutes: interval,
+    })
+}
+
+#[derive(Deserialize)]
+struct BlocklistIntervalRequest {
+    interval_minutes: u64,
+}
+
+async fn api_set_blocklist_interval(
+    State(state): State<AppState>,
+    Json(req): Json<BlocklistIntervalRequest>,
+) -> StatusCode {
+    *state.blocklist_update_interval.write().await = req.interval_minutes;
+    tracing::info!(
+        "Blocklist update interval set to {} minutes",
+        req.interval_minutes
+    );
+    StatusCode::OK
+}
+
+// ==================== Version / Update ====================
+
+async fn api_version(State(state): State<AppState>) -> Json<crate::update::VersionInfo> {
+    Json(state.update_checker.check(false).await)
+}
+
+async fn api_version_check(State(state): State<AppState>) -> Json<crate::update::VersionInfo> {
+    Json(state.update_checker.check(true).await)
+}
+
+#[derive(Serialize)]
+struct UpdateResponse {
+    success: bool,
+    message: String,
+}
+
+async fn api_perform_update(State(state): State<AppState>) -> Json<UpdateResponse> {
+    match state.update_checker.perform_update().await {
+        Ok(msg) => Json(UpdateResponse {
+            success: true,
+            message: msg,
+        }),
+        Err(msg) => Json(UpdateResponse {
+            success: false,
+            message: msg,
+        }),
+    }
 }

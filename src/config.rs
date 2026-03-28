@@ -68,6 +68,9 @@ pub struct BlockingConfig {
     /// Allowlisted domains (bypass blocking)
     #[serde(default)]
     pub allowlist: Vec<String>,
+    /// How often to refresh blocklists, in minutes (0 = disabled)
+    #[serde(default = "default_update_interval")]
+    pub update_interval_minutes: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -117,6 +120,10 @@ fn default_true() -> bool {
     true
 }
 
+fn default_update_interval() -> u64 {
+    60
+}
+
 impl Default for BlockingConfig {
     fn default() -> Self {
         Self {
@@ -124,6 +131,7 @@ impl Default for BlockingConfig {
             blocklists: Vec::new(),
             custom_blocked: Vec::new(),
             allowlist: Vec::new(),
+            update_interval_minutes: default_update_interval(),
         }
     }
 }

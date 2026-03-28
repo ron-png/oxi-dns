@@ -207,6 +207,50 @@ impl BlocklistManager {
         self.sources.read().await.clone()
     }
 
+    /// Re-fetch all current blocklist sources and rebuild the blocked set.
+    pub async fn refresh_sources(&self) {
+        let sources = self.sources.read().await.clone();
+        if sources.is_empty() {
+            return;
+        }
+        info!("Refreshing {} blocklist sources...", sources.len());
+
+        let mut new_src_map = HashMap::new();
+        let mut all_domains = HashSet::new();
+
+        for source in &sources {
+            match self.fetch_blocklist(source).await {
+                Ok(entries) => {
+                    info!("Refreshed {} entries from {}", entries.len(), source);
+                    let set: HashSet<String> = entries.into_iter().collect();
+                    all_domains.extend(set.clone());
+                    new_src_map.insert(source.clone(), set);
+                }
+                Err(e) => {
+                    warn!("Failed to refresh blocklist {}: {}", source, e);
+                    // Keep existing entries for this source on failure
+                    let existing = self.source_domains.read().await;
+                    if let Some(existing_set) = existing.get(source) {
+                        all_domains.extend(existing_set.clone());
+                        new_src_map.insert(source.clone(), existing_set.clone());
+                    }
+                }
+            }
+        }
+
+        // Add custom blocked domains
+        let custom = self.custom_blocked.read().await;
+        all_domains.extend(custom.clone());
+
+        let total = all_domains.len();
+        *self.source_domains.write().await = new_src_map;
+        *self.blocked.write().await = all_domains;
+        info!(
+            "Blocklist refresh complete: {} total blocked domains",
+            total
+        );
+    }
+
     pub async fn add_custom_blocked(&self, domain: &str) {
         let d = normalize_domain(domain);
         self.custom_blocked.write().await.insert(d.clone());
