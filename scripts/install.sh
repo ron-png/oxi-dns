@@ -5,7 +5,7 @@
 #   curl -s -S -L "https://raw.githubusercontent.com/ron-png/oxi-hole/master/scripts/install.sh?v=$(date +%s)" | sh -s -- [options]
 #
 # Options:
-#   -r  Reinstall (overwrite existing installation)
+#   -r  Reinstall (purge all files and install fresh)
 #   -u  Uninstall
 #   -v  Verbose output
 #   -c <channel>  Release channel (stable, beta, edge). Default: stable
@@ -79,7 +79,7 @@ Usage: $0 [options]
 
 Options:
   -c <channel>  Release channel: stable (default), beta, edge
-  -r            Reinstall (overwrite existing installation)
+  -r            Reinstall (purge all files and install fresh)
   -u            Uninstall Oxi-Hole
   -v            Verbose output
   -h            Show this help message
@@ -346,10 +346,20 @@ do_install() {
         exit 1
     fi
 
-    # Stop existing service if reinstalling
+    # Purge existing installation if reinstalling
     if [ "$REINSTALL" -eq 1 ]; then
-        log_step "Stopping existing service"
+        log_step "Purging existing installation"
         stop_service 2>/dev/null || true
+        disable_service 2>/dev/null || true
+        remove_service
+        rm -f "${INSTALL_DIR}/${BINARY_NAME}"
+        rm -f "/usr/local/bin/${BINARY_NAME}"
+        rm -rf "$CONFIG_DIR"
+        rm -rf "$LOG_DIR"
+        if id oxi-hole >/dev/null 2>&1; then
+            userdel oxi-hole 2>/dev/null || true
+        fi
+        log_info "Existing installation purged"
     fi
 
     # Install binary
