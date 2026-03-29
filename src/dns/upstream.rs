@@ -1,7 +1,8 @@
+use dashmap::DashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
 use tracing::{debug, warn};
@@ -336,6 +337,19 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
     anyhow::bail!("Root fallback: max referral depth exceeded for {}", host)
 }
 
+/// A cached DNS response with expiration.
+struct CacheEntry {
+    response_bytes: Vec<u8>,
+    expires_at: Instant,
+    inserted_at: Instant,
+}
+
+impl CacheEntry {
+    fn is_expired(&self) -> bool {
+        Instant::now() >= self.expires_at
+    }
+}
+
 /// Handles forwarding DNS queries to upstream servers with multi-protocol support.
 #[derive(Clone)]
 pub struct UpstreamForwarder {
@@ -344,6 +358,10 @@ pub struct UpstreamForwarder {
     tls_client_config: Arc<rustls::ClientConfig>,
     quic_client_config: quinn::ClientConfig,
     use_root_servers: Arc<AtomicBool>,
+    cache: Arc<DashMap<(String, u16), CacheEntry>>,
+    cache_hits: Arc<AtomicU64>,
+    cache_misses: Arc<AtomicU64>,
+    cache_enabled: Arc<AtomicBool>,
 }
 
 impl UpstreamForwarder {
@@ -374,6 +392,10 @@ impl UpstreamForwarder {
             tls_client_config,
             quic_client_config,
             use_root_servers: Arc::new(AtomicBool::new(false)),
+            cache: Arc::new(DashMap::new()),
+            cache_hits: Arc::new(AtomicU64::new(0)),
+            cache_misses: Arc::new(AtomicU64::new(0)),
+            cache_enabled: Arc::new(AtomicBool::new(true)),
         })
     }
 
@@ -1200,5 +1222,31 @@ mod tests {
         for addr in &addrs {
             assert_eq!(addr.port(), 853);
         }
+    }
+}
+
+#[cfg(test)]
+mod cache_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn cache_entry_is_expired_after_ttl() {
+        let entry = CacheEntry {
+            response_bytes: vec![0u8; 10],
+            expires_at: Instant::now() - Duration::from_secs(1),
+            inserted_at: Instant::now() - Duration::from_secs(61),
+        };
+        assert!(entry.is_expired());
+    }
+
+    #[test]
+    fn cache_entry_is_not_expired_before_ttl() {
+        let entry = CacheEntry {
+            response_bytes: vec![0u8; 10],
+            expires_at: Instant::now() + Duration::from_secs(60),
+            inserted_at: Instant::now(),
+        };
+        assert!(!entry.is_expired());
     }
 }
