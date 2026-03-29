@@ -408,6 +408,32 @@ fn make_cache_key(domain: &str, query_type: u16) -> (String, u16) {
     (normalized, query_type)
 }
 
+/// Extract IP addresses from glue records (A and AAAA) in the additional section.
+fn extract_glue_records(
+    response: &hickory_proto::op::Message,
+    ns_names: &[String],
+) -> Vec<SocketAddr> {
+    use hickory_proto::rr::RData;
+
+    let mut servers = Vec::new();
+    for record in response.additionals() {
+        let name = record.name().to_ascii();
+        if !ns_names.iter().any(|ns| ns == &name) {
+            continue;
+        }
+        match record.data() {
+            RData::A(ip) => {
+                servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
+            }
+            RData::AAAA(ip) => {
+                servers.push(SocketAddr::new(IpAddr::V6(ip.0), 53));
+            }
+            _ => {}
+        }
+    }
+    servers
+}
+
 /// Handles forwarding DNS queries to upstream servers with multi-protocol support.
 #[derive(Clone)]
 pub struct UpstreamForwarder {
@@ -949,26 +975,13 @@ impl UpstreamForwarder {
         response: &hickory_proto::op::Message,
         ns_names: &[String],
     ) -> Vec<SocketAddr> {
-        use hickory_proto::rr::{RData, RecordType};
-
-        // First try glue A records from additional section
-        let mut servers = Vec::new();
-        for record in response.additionals() {
-            if record.record_type() == RecordType::A {
-                if let RData::A(ip) = record.data() {
-                    let name = record.name().to_ascii();
-                    if ns_names.iter().any(|ns| ns == &name) {
-                        servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
-                    }
-                }
-            }
-        }
-
+        let servers = extract_glue_records(response, ns_names);
         if !servers.is_empty() {
             return servers;
         }
 
         // No glue — resolve NS names iteratively (no third-party resolvers)
+        let mut servers = Vec::new();
         for ns_name in ns_names {
             if let Ok(addrs) = self.resolve_ns_iterative(ns_name).await {
                 servers.extend(addrs);
@@ -977,7 +990,6 @@ impl UpstreamForwarder {
                 break;
             }
         }
-
         servers
     }
 
@@ -1048,18 +1060,8 @@ impl UpstreamForwarder {
                 anyhow::bail!("NS resolution: no referral for {}", ns_name);
             }
 
-            // Extract glue A records
-            let mut next_servers = Vec::new();
-            for record in resp.additionals() {
-                if record.record_type() == RecordType::A {
-                    if let RData::A(ip) = record.data() {
-                        let rec_name = record.name().to_ascii();
-                        if ns_names.iter().any(|n| n == &rec_name) {
-                            next_servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
-                        }
-                    }
-                }
-            }
+            // Extract glue A and AAAA records
+            let next_servers = extract_glue_records(&resp, &ns_names);
 
             if next_servers.is_empty() {
                 // No glue for sub-resolution — give up to avoid infinite recursion
@@ -1638,5 +1640,36 @@ mod cache_tests {
         msg.set_header(header);
 
         assert!(msg.header().truncated());
+    }
+
+    #[test]
+    fn glue_extraction_includes_aaaa() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+        use hickory_proto::rr::{Name, RData, Record};
+        use hickory_proto::rr::rdata;
+
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        msg.set_header(header);
+
+        // Add NS record in authority
+        let ns_name = Name::from_ascii("example.com.").unwrap();
+        let ns_target = Name::from_ascii("ns1.example.com.").unwrap();
+        let ns_rdata = RData::NS(rdata::NS(ns_target.clone()));
+        let ns_record = Record::from_rdata(ns_name, 300, ns_rdata);
+        msg.add_name_server(ns_record);
+
+        // Add AAAA glue in additional (no A glue)
+        let aaaa_rdata = RData::AAAA("2001:db8::1".parse().unwrap());
+        let aaaa_record = Record::from_rdata(ns_target, 300, aaaa_rdata);
+        msg.add_additional(aaaa_record);
+
+        let ns_names = vec!["ns1.example.com.".to_string()];
+        let servers = extract_glue_records(&msg, &ns_names);
+        assert!(!servers.is_empty(), "Should extract AAAA glue records");
+        assert!(servers[0].is_ipv6());
     }
 }
