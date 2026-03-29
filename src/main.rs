@@ -1,3 +1,8 @@
+#[cfg(not(unix))]
+compile_error!(
+    "oxi-hole only supports Unix platforms (Linux, macOS, FreeBSD). Use Docker for other platforms."
+);
+
 mod blocklist;
 mod config;
 mod dns;
