@@ -148,7 +148,8 @@ pub async fn run_web_server(listen: &[String], state: AppState) -> anyhow::Resul
         } else {
             socket2::Domain::IPV6
         };
-        let socket = socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
+        let socket =
+            socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
         socket.set_reuse_port(true)?;
         socket.set_nonblocking(true)?;
         socket.bind(&sock_addr.into())?;
@@ -499,7 +500,9 @@ struct Ipv6Status {
 }
 
 async fn api_get_ipv6(State(state): State<AppState>) -> Json<Ipv6Status> {
-    let enabled = state.ipv6_enabled.load(std::sync::atomic::Ordering::Relaxed);
+    let enabled = state
+        .ipv6_enabled
+        .load(std::sync::atomic::Ordering::Relaxed);
     Json(Ipv6Status { enabled })
 }
 
@@ -512,7 +515,9 @@ async fn api_set_ipv6(
     State(state): State<AppState>,
     Json(req): Json<Ipv6Request>,
 ) -> StatusCode {
-    state.ipv6_enabled.store(req.enabled, std::sync::atomic::Ordering::Relaxed);
+    state
+        .ipv6_enabled
+        .store(req.enabled, std::sync::atomic::Ordering::Relaxed);
     tracing::info!("IPv6 (AAAA) set to {}", req.enabled);
     state.save_config().await;
     StatusCode::OK

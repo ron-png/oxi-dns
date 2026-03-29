@@ -212,7 +212,10 @@ where
             Ok(Some(vec![value.to_string()]))
         }
 
-        fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Option<Vec<String>>, A::Error> {
+        fn visit_seq<A: de::SeqAccess<'de>>(
+            self,
+            mut seq: A,
+        ) -> Result<Option<Vec<String>>, A::Error> {
             let mut vec = Vec::new();
             while let Some(value) = seq.next_element()? {
                 vec.push(value);

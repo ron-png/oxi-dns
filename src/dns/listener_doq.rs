@@ -78,7 +78,8 @@ pub async fn run(
 
                                 tokio::spawn(async move {
                                     if let Err(e) = handle_doq_stream(
-                                        send, recv, &cip, &bl, &st, &up, &ft, &bm, &ql, &anon, &ipv6,
+                                        send, recv, &cip, &bl, &st, &up, &ft, &bm, &ql, &anon,
+                                        &ipv6,
                                     )
                                     .await
                                     {

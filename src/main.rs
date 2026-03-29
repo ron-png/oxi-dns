@@ -347,7 +347,6 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-
     let (dns_result, web_result) = tokio::join!(dns_handle, web_handle);
     if let Err(e) = dns_result {
         tracing::error!("DNS server task error: {}", e);

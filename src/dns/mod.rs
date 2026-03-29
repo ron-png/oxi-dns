@@ -78,7 +78,11 @@ impl DnsServer {
             let ft = self.features.clone();
             let bm = self.blocking_mode.clone();
             // Only the first UDP listener gets the ready_tx
-            let ready_tx = if first_udp { self.ready_tx.take() } else { None };
+            let ready_tx = if first_udp {
+                self.ready_tx.take()
+            } else {
+                None
+            };
             let ql = self.query_log.clone();
             let anon = self.anonymize_ip.clone();
             let ipv6 = self.ipv6_enabled.clone();
@@ -108,7 +112,9 @@ impl DnsServer {
                 let ipv6 = self.ipv6_enabled.clone();
                 info!("Starting DNS-over-TLS on {}", addr);
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = listener_dot::run(addr, bl, st, up, ft, bm, tls, ql, anon, ipv6).await {
+                    if let Err(e) =
+                        listener_dot::run(addr, bl, st, up, ft, bm, tls, ql, anon, ipv6).await
+                    {
                         tracing::error!("DoT listener error: {}", e);
                     }
                 }));
@@ -130,7 +136,9 @@ impl DnsServer {
                 let ipv6 = self.ipv6_enabled.clone();
                 info!("Starting DNS-over-HTTPS on {}", addr);
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = listener_doh::run(addr, bl, st, up, ft, bm, tls, ql, anon, ipv6).await {
+                    if let Err(e) =
+                        listener_doh::run(addr, bl, st, up, ft, bm, tls, ql, anon, ipv6).await
+                    {
                         tracing::error!("DoH listener error: {}", e);
                     }
                 }));
