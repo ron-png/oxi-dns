@@ -11,7 +11,6 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tracing::{debug, error};
 
-/// Bind a UDP socket, optionally with SO_REUSEPORT for zero-downtime takeover.
 fn bind_udp_reuse_port(addr: &str) -> anyhow::Result<std::net::UdpSocket> {
     use socket2::{Domain, Protocol, Socket, Type};
     let sock_addr: std::net::SocketAddr = addr.parse()?;
@@ -38,14 +37,9 @@ pub async fn run(
     ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
-    reuse_port: bool,
 ) -> anyhow::Result<()> {
-    let socket = if reuse_port {
-        let std_socket = bind_udp_reuse_port(&addr)?;
-        Arc::new(UdpSocket::from_std(std_socket)?)
-    } else {
-        Arc::new(UdpSocket::bind(&addr).await?)
-    };
+    let std_socket = bind_udp_reuse_port(&addr)?;
+    let socket = Arc::new(UdpSocket::from_std(std_socket)?);
     if let Some(tx) = ready_tx {
         let _ = tx.send(());
     }

@@ -72,7 +72,7 @@ impl AppState {
     }
 }
 
-pub async fn run_web_server(listen: &str, state: AppState, reuse_port: bool) -> anyhow::Result<()> {
+pub async fn run_web_server(listen: &str, state: AppState) -> anyhow::Result<()> {
     let app = Router::new()
         // Dashboard
         .route("/", get(dashboard))
@@ -135,23 +135,19 @@ pub async fn run_web_server(listen: &str, state: AppState, reuse_port: bool) -> 
         .route("/api/logs/settings", post(api_set_log_settings))
         .with_state(state);
 
-    let listener = if reuse_port {
-        let sock_addr: std::net::SocketAddr = listen.parse()?;
-        let domain = if sock_addr.is_ipv4() {
-            socket2::Domain::IPV4
-        } else {
-            socket2::Domain::IPV6
-        };
-        let socket =
-            socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
-        socket.set_reuse_port(true)?;
-        socket.set_nonblocking(true)?;
-        socket.bind(&sock_addr.into())?;
-        socket.listen(128)?;
-        tokio::net::TcpListener::from_std(socket.into())?
+    let sock_addr: std::net::SocketAddr = listen.parse()?;
+    let domain = if sock_addr.is_ipv4() {
+        socket2::Domain::IPV4
     } else {
-        tokio::net::TcpListener::bind(listen).await?
+        socket2::Domain::IPV6
     };
+    let socket =
+        socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
+    socket.set_reuse_port(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&sock_addr.into())?;
+    socket.listen(128)?;
+    let listener = tokio::net::TcpListener::from_std(socket.into())?;
     info!("Web admin UI listening on http://{}", listen);
     axum::serve(listener, app).await?;
     Ok(())

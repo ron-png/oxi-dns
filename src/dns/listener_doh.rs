@@ -20,7 +20,6 @@ use tokio_rustls::TlsAcceptor;
 use tower_service::Service;
 use tracing::{debug, error, info};
 
-/// Bind a TCP socket, optionally with SO_REUSEPORT for zero-downtime takeover.
 fn bind_tcp_reuse_port(addr: &str) -> anyhow::Result<std::net::TcpListener> {
     use socket2::{Domain, Protocol, Socket, Type};
     let sock_addr: std::net::SocketAddr = addr.parse()?;
@@ -59,7 +58,6 @@ pub async fn run(
     tls_config: Arc<rustls::ServerConfig>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
-    reuse_port: bool,
 ) -> anyhow::Result<()> {
     let state = DohState {
         blocklist,
@@ -75,12 +73,8 @@ pub async fn run(
         .route("/dns-query", get(doh_get).post(doh_post))
         .with_state(state);
 
-    let tcp_listener = if reuse_port {
-        let std_listener = bind_tcp_reuse_port(&addr)?;
-        TcpListener::from_std(std_listener)?
-    } else {
-        TcpListener::bind(&addr).await?
-    };
+    let std_listener = bind_tcp_reuse_port(&addr)?;
+    let tcp_listener = TcpListener::from_std(std_listener)?;
     let acceptor = TlsAcceptor::from(tls_config);
     info!("DoH listener ready on https://{}/dns-query", addr);
 

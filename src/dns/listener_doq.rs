@@ -36,19 +36,14 @@ pub async fn run(
     quic_config: quinn::ServerConfig,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
-    reuse_port: bool,
 ) -> anyhow::Result<()> {
-    let endpoint = if reuse_port {
-        let std_socket = bind_udp_reuse_port(&addr)?;
-        quinn::Endpoint::new(
-            quinn::EndpointConfig::default(),
-            Some(quic_config),
-            std_socket,
-            quinn::default_runtime().unwrap(),
-        )?
-    } else {
-        quinn::Endpoint::server(quic_config, addr.parse()?)?
-    };
+    let std_socket = bind_udp_reuse_port(&addr)?;
+    let endpoint = quinn::Endpoint::new(
+        quinn::EndpointConfig::default(),
+        Some(quic_config),
+        std_socket,
+        quinn::default_runtime().unwrap(),
+    )?;
     info!("DoQ listener ready on {}", addr);
 
     while let Some(incoming) = endpoint.accept().await {

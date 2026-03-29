@@ -30,7 +30,6 @@ pub struct DnsServer {
     ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
-    reuse_port: bool,
 }
 
 impl DnsServer {
@@ -47,7 +46,6 @@ impl DnsServer {
         ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
         query_log: QueryLog,
         anonymize_ip: Arc<AtomicBool>,
-        reuse_port: bool,
     ) -> Self {
         Self {
             config,
@@ -61,7 +59,6 @@ impl DnsServer {
             ready_tx,
             query_log,
             anonymize_ip,
-            reuse_port,
         }
     }
 
@@ -82,7 +79,7 @@ impl DnsServer {
             info!("Starting plain DNS (UDP) on {}", addr);
             handles.push(tokio::spawn(async move {
                 if let Err(e) =
-                    listener_udp::run(addr, bl, st, up, ft, bm, ready_tx, ql, anon, self.reuse_port).await
+                    listener_udp::run(addr, bl, st, up, ft, bm, ready_tx, ql, anon).await
                 {
                     tracing::error!("UDP DNS listener error: {}", e);
                 }
@@ -102,7 +99,7 @@ impl DnsServer {
             let anon = self.anonymize_ip.clone();
             info!("Starting DNS-over-TLS on {}", addr);
             handles.push(tokio::spawn(async move {
-                if let Err(e) = listener_dot::run(addr, bl, st, up, ft, bm, tls, ql, anon, self.reuse_port).await {
+                if let Err(e) = listener_dot::run(addr, bl, st, up, ft, bm, tls, ql, anon).await {
                     tracing::error!("DoT listener error: {}", e);
                 }
             }));
@@ -121,7 +118,7 @@ impl DnsServer {
             let anon = self.anonymize_ip.clone();
             info!("Starting DNS-over-HTTPS on {}", addr);
             handles.push(tokio::spawn(async move {
-                if let Err(e) = listener_doh::run(addr, bl, st, up, ft, bm, tls, ql, anon, self.reuse_port).await {
+                if let Err(e) = listener_doh::run(addr, bl, st, up, ft, bm, tls, ql, anon).await {
                     tracing::error!("DoH listener error: {}", e);
                 }
             }));
@@ -141,7 +138,7 @@ impl DnsServer {
                 info!("Starting DNS-over-QUIC on {}", addr);
                 handles.push(tokio::spawn(async move {
                     if let Err(e) =
-                        listener_doq::run(addr, bl, st, up, ft, bm, quic_config, ql, anon, self.reuse_port).await
+                        listener_doq::run(addr, bl, st, up, ft, bm, quic_config, ql, anon).await
                     {
                         tracing::error!("DoQ listener error: {}", e);
                     }

@@ -13,7 +13,6 @@ use tokio::sync::RwLock;
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info};
 
-/// Bind a TCP socket, optionally with SO_REUSEPORT for zero-downtime takeover.
 fn bind_tcp_reuse_port(addr: &str) -> anyhow::Result<std::net::TcpListener> {
     use socket2::{Domain, Protocol, Socket, Type};
     let sock_addr: std::net::SocketAddr = addr.parse()?;
@@ -41,14 +40,9 @@ pub async fn run(
     tls_config: Arc<rustls::ServerConfig>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
-    reuse_port: bool,
 ) -> anyhow::Result<()> {
-    let listener = if reuse_port {
-        let std_listener = bind_tcp_reuse_port(&addr)?;
-        TcpListener::from_std(std_listener)?
-    } else {
-        TcpListener::bind(&addr).await?
-    };
+    let std_listener = bind_tcp_reuse_port(&addr)?;
+    let listener = TcpListener::from_std(std_listener)?;
     let acceptor = TlsAcceptor::from(tls_config);
     info!("DoT listener ready on {}", addr);
 

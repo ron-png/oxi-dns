@@ -205,7 +205,6 @@ async fn main() -> anyhow::Result<()> {
         Some(dns_ready_tx),
         query_log.clone(),
         anonymize_ip.clone(),
-        takeover, // reuse_port: only true for --takeover mode
     );
 
     let dns_handle = tokio::spawn(async move {
@@ -543,7 +542,7 @@ async fn main() -> anyhow::Result<()> {
 
     let web_listen = config.web.listen.clone();
     let web_handle = tokio::spawn(async move {
-        if let Err(e) = web::run_web_server(&web_listen, web_state, takeover).await {
+        if let Err(e) = web::run_web_server(&web_listen, web_state).await {
             tracing::error!("Web server error: {}", e);
         }
     });
