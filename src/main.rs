@@ -214,6 +214,7 @@ async fn main() -> anyhow::Result<()> {
         upstream: upstream_for_web,
         auto_update: std::sync::Arc::new(tokio::sync::RwLock::new(config.system.auto_update)),
         update_checker,
+        update_status: std::sync::Arc::new(tokio::sync::RwLock::new(crate::update::UpdateStatus::default())),
         blocklist_update_interval,
         blocking_mode,
         config_path: config_path.clone(),

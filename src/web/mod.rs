@@ -24,6 +24,7 @@ pub struct AppState {
     pub upstream: UpstreamForwarder,
     pub auto_update: std::sync::Arc<tokio::sync::RwLock<bool>>,
     pub update_checker: UpdateChecker,
+    pub update_status: std::sync::Arc<tokio::sync::RwLock<crate::update::UpdateStatus>>,
     pub blocklist_update_interval: std::sync::Arc<tokio::sync::RwLock<u64>>,
     pub blocking_mode: std::sync::Arc<tokio::sync::RwLock<BlockingMode>>,
     pub config_path: PathBuf,
@@ -123,6 +124,11 @@ pub async fn run_web_server(listen: &str, state: AppState) -> anyhow::Result<()>
         .route("/api/system/version/check", post(api_version_check))
         .route("/api/system/update", post(api_perform_update))
         .route("/api/system/restart", post(api_restart))
+        .route("/api/system/update/status", get(api_update_status))
+        .route(
+            "/api/system/update/status/dismiss",
+            post(api_dismiss_update_status),
+        )
         // Query log
         .route("/api/logs", get(api_logs))
         .route("/api/logs/settings", get(api_get_log_settings))
@@ -530,6 +536,19 @@ async fn api_restart() -> StatusCode {
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
         std::process::exit(0);
     });
+    StatusCode::OK
+}
+
+// ==================== Update Status ====================
+
+async fn api_update_status(State(state): State<AppState>) -> Json<crate::update::UpdateStatus> {
+    let status = state.update_status.read().await;
+    Json(status.to_serializable())
+}
+
+async fn api_dismiss_update_status(State(state): State<AppState>) -> StatusCode {
+    let mut status = state.update_status.write().await;
+    *status = crate::update::UpdateStatus::default();
     StatusCode::OK
 }
 
