@@ -336,6 +336,22 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Spawn cache eviction task (every 60 seconds)
+    {
+        let upstream = web_state.upstream.clone();
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+            interval.tick().await; // skip immediate first tick
+            loop {
+                interval.tick().await;
+                let removed = upstream.evict_expired();
+                if removed > 0 {
+                    tracing::debug!("Cache eviction: removed {} expired entries", removed);
+                }
+            }
+        });
+    }
+
     // Restore enabled features from config
     for feature_id in &config.blocking.enabled_features {
         info!("Restoring feature: {}", feature_id);
