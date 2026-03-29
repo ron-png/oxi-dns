@@ -84,15 +84,8 @@ async fn main() -> anyhow::Result<()> {
     let client_tls_config = tls::build_client_config()?;
     let quic_client_config = tls::build_quic_client_config()?;
 
-    // Initialize blocklist manager
+    // Initialize blocklist manager (loaded after DNS is ready to avoid bootstrap issues)
     let blocklist_manager = blocklist::BlocklistManager::new(config.blocking.enabled);
-    blocklist_manager
-        .load(
-            &config.blocking.blocklists,
-            &config.blocking.custom_blocked,
-            &config.blocking.allowlist,
-        )
-        .await;
 
     // Build upstream forwarder
     let upstream = dns::upstream::UpstreamForwarder::new(
@@ -116,6 +109,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Start DNS server (all protocols)
     let upstream_for_web = upstream.clone();
+    let (dns_ready_tx, dns_ready_rx) = tokio::sync::oneshot::channel::<()>();
     let dns_server = dns::DnsServer::new(
         config.dns.clone(),
         blocklist_manager.clone(),
@@ -125,6 +119,7 @@ async fn main() -> anyhow::Result<()> {
         blocking_mode.clone(),
         server_tls_config,
         quic_server_config,
+        Some(dns_ready_tx),
     );
 
     let dns_handle = tokio::spawn(async move {
@@ -132,6 +127,19 @@ async fn main() -> anyhow::Result<()> {
             tracing::error!("DNS server error: {}", e);
         }
     });
+
+    // Wait for DNS server to be ready before loading blocklists, so that
+    // machines using oxi-hole as their own resolver can fetch remote lists.
+    let _ = dns_ready_rx.await;
+
+    // Load blocklists now that DNS is available
+    blocklist_manager
+        .load(
+            &config.blocking.blocklists,
+            &config.blocking.custom_blocked,
+            &config.blocking.allowlist,
+        )
+        .await;
 
     // Initialize update checker
     let update_checker = update::UpdateChecker::new();

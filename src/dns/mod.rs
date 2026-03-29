@@ -25,6 +25,7 @@ pub struct DnsServer {
     blocking_mode: Arc<RwLock<BlockingMode>>,
     tls_config: Option<Arc<rustls::ServerConfig>>,
     quic_config: Option<quinn::ServerConfig>,
+    ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
 }
 
 impl DnsServer {
@@ -38,6 +39,7 @@ impl DnsServer {
         blocking_mode: Arc<RwLock<BlockingMode>>,
         tls_config: Option<Arc<rustls::ServerConfig>>,
         quic_config: Option<quinn::ServerConfig>,
+        ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
     ) -> Self {
         Self {
             config,
@@ -48,10 +50,11 @@ impl DnsServer {
             blocking_mode,
             tls_config,
             quic_config,
+            ready_tx,
         }
     }
 
-    pub async fn run(self) -> anyhow::Result<()> {
+    pub async fn run(mut self) -> anyhow::Result<()> {
         let mut handles = Vec::new();
 
         // Always start plain UDP listener
@@ -62,9 +65,10 @@ impl DnsServer {
             let up = self.upstream.clone();
             let ft = self.features.clone();
             let bm = self.blocking_mode.clone();
+            let ready_tx = self.ready_tx.take();
             info!("Starting plain DNS (UDP) on {}", addr);
             handles.push(tokio::spawn(async move {
-                if let Err(e) = listener_udp::run(addr, bl, st, up, ft, bm).await {
+                if let Err(e) = listener_udp::run(addr, bl, st, up, ft, bm, ready_tx).await {
                     tracing::error!("UDP DNS listener error: {}", e);
                 }
             }));

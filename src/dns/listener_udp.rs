@@ -16,8 +16,12 @@ pub async fn run(
     upstream: UpstreamForwarder,
     features: FeatureManager,
     blocking_mode: Arc<RwLock<BlockingMode>>,
+    ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> anyhow::Result<()> {
     let socket = Arc::new(UdpSocket::bind(&addr).await?);
+    if let Some(tx) = ready_tx {
+        let _ = tx.send(());
+    }
     let mut buf = vec![0u8; 4096];
 
     loop {
