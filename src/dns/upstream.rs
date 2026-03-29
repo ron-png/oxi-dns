@@ -150,15 +150,28 @@ fn parse_url_host(url: &str) -> anyhow::Result<(String, u16)> {
     }
 }
 
-/// Blocking hostname resolution via the system resolver, returning all addresses.
-/// Used at startup only, before oxi-hole is the system DNS.
+/// Blocking hostname resolution, returning all addresses.
+/// Tries the system resolver first. If that fails (e.g. oxi-hole is the system DNS
+/// and is restarting), falls back to iterative resolution from root servers.
 fn resolve_all_blocking(host: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
     use std::net::ToSocketAddrs;
-    let addrs: Vec<SocketAddr> = format!("{}:{}", host, port).to_socket_addrs()?.collect();
-    if addrs.is_empty() {
-        anyhow::bail!("Could not resolve {}", host);
+
+    // Fast path: system resolver
+    let addrs: Vec<SocketAddr> = format!("{}:{}", host, port)
+        .to_socket_addrs()
+        .map(|iter| iter.collect())
+        .unwrap_or_default();
+    if !addrs.is_empty() {
+        return Ok(addrs);
     }
-    Ok(addrs)
+
+    // Fallback: resolve via root servers
+    warn!(
+        "System DNS failed to resolve '{}', falling back to root server resolution",
+        host
+    );
+    let handle = tokio::runtime::Handle::current();
+    tokio::task::block_in_place(|| handle.block_on(resolve_via_root_servers(host, port)))
 }
 
 /// Send a single UDP DNS query and parse the response.
