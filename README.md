@@ -1,10 +1,18 @@
-# Oxi-Hole
+# Oxi-Hole — DNS Ad Blocker & Sinkhole Written in Rust
 
-A fast, memory-safe DNS sinkhole written in Rust. Blocks ads, trackers, and malicious domains at the DNS level for every device on your network.
+A fast, memory-safe DNS sinkhole that blocks ads, trackers, and malware at the network level. A modern alternative to Pi-hole and AdGuard Home, built from the ground up in Rust with encrypted DNS support.
 
-Supports plain DNS (UDP), DNS-over-TLS, DNS-over-HTTPS, and DNS-over-QUIC. Ships as a single static binary with a built-in web dashboard.
+Supports plain DNS (UDP), DNS-over-TLS (DoT), DNS-over-HTTPS (DoH), and DNS-over-QUIC (DoQ). Ships as a single static binary with a built-in web dashboard — no dependencies, no containers required.
 
 > **Early alpha** — under active development. Expect rough edges.
+
+## Why Oxi-Hole?
+
+- **Single binary, zero dependencies** — no Python, no PHP, no database server to maintain
+- **Encrypted DNS out of the box** — DoT, DoH, and DoQ alongside plain DNS
+- **Written in Rust** — memory-safe, no garbage collector, minimal resource usage
+- **Zero-downtime updates** — automatic self-updates with health checks and seamless binary replacement
+- **Runtime configuration** — change any setting from the web dashboard without restarting
 
 ## Features
 
@@ -17,9 +25,9 @@ Supports plain DNS (UDP), DNS-over-TLS, DNS-over-HTTPS, and DNS-over-QUIC. Ships
 - Dual-stack IPv4/IPv6 listening on all protocols
 - Multiple listen addresses per protocol
 
-### Ad & Tracker Blocking
+### Network-Wide Ad & Tracker Blocking
 
-- Network-wide blocking via DNS sinkhole
+- Block ads, trackers, and malware for every device on your network
 - Supports hosts-file, Adblock, and AdGuard filter syntax
 - Multiple blocklist sources (URLs or local files)
 - Custom blocked domains and allowlist
@@ -31,7 +39,7 @@ Supports plain DNS (UDP), DNS-over-TLS, DNS-over-HTTPS, and DNS-over-QUIC. Ships
   - YouTube restricted mode
   - Root server resolution (queries root DNS directly, bypassing third-party upstreams)
 
-### Blocking Modes
+### DNS Blocking Modes
 
 Choose how blocked queries are answered:
 
@@ -45,7 +53,7 @@ Choose how blocked queries are answered:
 
 All modes are changeable at runtime without restart.
 
-### IPv6 Control
+### IPv6 Support
 
 - AAAA response filtering toggle — disable to strip IPv6 records from DNS answers
 - Dual-stack listen addresses by default (`0.0.0.0` + `[::]`)
