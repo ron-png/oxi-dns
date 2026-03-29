@@ -350,6 +350,26 @@ impl CacheEntry {
     }
 }
 
+const CACHE_TTL_FLOOR: u32 = 30;
+const CACHE_TTL_CEILING: u32 = 86400;
+
+/// Extract the minimum TTL from all records in a DNS response,
+/// clamped to [CACHE_TTL_FLOOR, CACHE_TTL_CEILING].
+fn extract_min_ttl(msg: &hickory_proto::op::Message) -> u32 {
+    let all_records = msg
+        .answers()
+        .iter()
+        .chain(msg.name_servers().iter())
+        .chain(msg.additionals().iter());
+
+    let min_ttl = all_records
+        .map(|r| r.ttl())
+        .min()
+        .unwrap_or(CACHE_TTL_FLOOR);
+
+    min_ttl.clamp(CACHE_TTL_FLOOR, CACHE_TTL_CEILING)
+}
+
 /// Handles forwarding DNS queries to upstream servers with multi-protocol support.
 #[derive(Clone)]
 pub struct UpstreamForwarder {
@@ -1248,5 +1268,99 @@ mod cache_tests {
             inserted_at: Instant::now(),
         };
         assert!(!entry.is_expired());
+    }
+
+    #[test]
+    fn extract_min_ttl_from_single_answer() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+        use hickory_proto::rr::{Name, RData, Record};
+
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        msg.set_header(header);
+
+        let name = Name::from_ascii("example.com.").unwrap();
+        let rdata = RData::A("1.2.3.4".parse().unwrap());
+        let record = Record::from_rdata(name, 120, rdata);
+        msg.add_answer(record);
+
+        assert_eq!(extract_min_ttl(&msg), 120);
+    }
+
+    #[test]
+    fn extract_min_ttl_picks_smallest_across_sections() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+        use hickory_proto::rr::{Name, RData, Record};
+
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        msg.set_header(header);
+
+        let name = Name::from_ascii("example.com.").unwrap();
+        let a_record = Record::from_rdata(name.clone(), 300, RData::A("1.2.3.4".parse().unwrap()));
+        msg.add_answer(a_record);
+
+        let ns_record = Record::from_rdata(name.clone(), 60, RData::A("5.6.7.8".parse().unwrap()));
+        msg.add_name_server(ns_record);
+
+        assert_eq!(extract_min_ttl(&msg), 60);
+    }
+
+    #[test]
+    fn extract_min_ttl_clamps_to_floor() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+        use hickory_proto::rr::{Name, RData, Record};
+
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        msg.set_header(header);
+
+        let name = Name::from_ascii("example.com.").unwrap();
+        let record = Record::from_rdata(name, 5, RData::A("1.2.3.4".parse().unwrap()));
+        msg.add_answer(record);
+
+        assert_eq!(extract_min_ttl(&msg), 30);
+    }
+
+    #[test]
+    fn extract_min_ttl_clamps_to_ceiling() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+        use hickory_proto::rr::{Name, RData, Record};
+
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        msg.set_header(header);
+
+        let name = Name::from_ascii("example.com.").unwrap();
+        let record = Record::from_rdata(name, 100_000, RData::A("1.2.3.4".parse().unwrap()));
+        msg.add_answer(record);
+
+        assert_eq!(extract_min_ttl(&msg), 86400);
+    }
+
+    #[test]
+    fn extract_min_ttl_empty_response_returns_floor() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        msg.set_header(header);
+
+        assert_eq!(extract_min_ttl(&msg), 30);
     }
 }
