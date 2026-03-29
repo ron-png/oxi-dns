@@ -1032,6 +1032,17 @@
                         <span class="toggle-slider"></span>
                     </label>
                 </div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>IPv6 (AAAA)</h3>
+                        <p>Include IPv6 records in DNS responses. Disable on IPv4-only networks to prevent
+                            clients from attempting unreachable IPv6 connections.</p>
+                    </div>
+                    <label class="toggle-switch" id="toggle-ipv6">
+                        <input type="checkbox" id="ipv6Checkbox" onchange="toggleIpv6(this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
                 <div class="version-box">
                     <div class="version-row">
                         <div class="version-info">
@@ -1579,6 +1590,11 @@
                 const data = await res.json();
                 document.getElementById('autoUpdateCheckbox').checked = data.enabled;
             } catch (e) { console.error('Failed to load auto-update state', e); }
+            try {
+                const res = await fetch('/api/system/ipv6');
+                const data = await res.json();
+                document.getElementById('ipv6Checkbox').checked = data.enabled;
+            } catch (e) { console.error('Failed to load IPv6 state', e); }
             refreshVersion();
         }
 
@@ -1595,6 +1611,22 @@
             } catch (e) {
                 console.error(e);
                 document.getElementById('autoUpdateCheckbox').checked = !enabled;
+            }
+            toggle.classList.remove('loading');
+        }
+
+        async function toggleIpv6(enabled) {
+            const toggle = document.getElementById('toggle-ipv6');
+            toggle.classList.add('loading');
+            try {
+                const res = await fetch('/api/system/ipv6', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+                if (!res.ok) throw new Error('Failed');
+            } catch (e) {
+                document.getElementById('ipv6Checkbox').checked = !enabled;
             }
             toggle.classList.remove('loading');
         }

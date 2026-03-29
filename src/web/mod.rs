@@ -31,6 +31,7 @@ pub struct AppState {
     pub query_log: QueryLog,
     pub log_retention_days: std::sync::Arc<tokio::sync::RwLock<u32>>,
     pub anonymize_ip: std::sync::Arc<AtomicBool>,
+    pub ipv6_enabled: std::sync::Arc<AtomicBool>,
 }
 
 impl AppState {
@@ -61,6 +62,7 @@ impl AppState {
             .map(|f| f.id)
             .collect();
         config.system.auto_update = *self.auto_update.read().await;
+        config.system.ipv6_enabled = self.ipv6_enabled.load(std::sync::atomic::Ordering::Relaxed);
         config.blocking.blocking_mode = self.blocking_mode.read().await.clone();
         config.log.retention_days = *self.log_retention_days.read().await;
         config.log.anonymize_client_ip =
@@ -107,6 +109,8 @@ pub async fn run_web_server(listen: &[String], state: AppState) -> anyhow::Resul
         // System settings
         .route("/api/system/auto-update", get(api_get_auto_update))
         .route("/api/system/auto-update", post(api_set_auto_update))
+        .route("/api/system/ipv6", get(api_get_ipv6))
+        .route("/api/system/ipv6", post(api_set_ipv6))
         // Blocklist update interval
         .route(
             "/api/system/blocklist-interval",
@@ -483,6 +487,33 @@ async fn api_set_auto_update(
 ) -> StatusCode {
     *state.auto_update.write().await = req.enabled;
     tracing::info!("Auto-update set to {}", req.enabled);
+    state.save_config().await;
+    StatusCode::OK
+}
+
+// ==================== IPv6 (AAAA) Toggle ====================
+
+#[derive(Serialize)]
+struct Ipv6Status {
+    enabled: bool,
+}
+
+async fn api_get_ipv6(State(state): State<AppState>) -> Json<Ipv6Status> {
+    let enabled = state.ipv6_enabled.load(std::sync::atomic::Ordering::Relaxed);
+    Json(Ipv6Status { enabled })
+}
+
+#[derive(Deserialize)]
+struct Ipv6Request {
+    enabled: bool,
+}
+
+async fn api_set_ipv6(
+    State(state): State<AppState>,
+    Json(req): Json<Ipv6Request>,
+) -> StatusCode {
+    state.ipv6_enabled.store(req.enabled, std::sync::atomic::Ordering::Relaxed);
+    tracing::info!("IPv6 (AAAA) set to {}", req.enabled);
     state.save_config().await;
     StatusCode::OK
 }

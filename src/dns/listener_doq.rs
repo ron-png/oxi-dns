@@ -36,6 +36,7 @@ pub async fn run(
     quic_config: quinn::ServerConfig,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
+    ipv6_enabled: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let std_socket = bind_udp_reuse_port(&addr)?;
     let endpoint = quinn::Endpoint::new(
@@ -54,6 +55,7 @@ pub async fn run(
         let bm = blocking_mode.clone();
         let ql = query_log.clone();
         let anon = anonymize_ip.clone();
+        let ipv6_enabled = ipv6_enabled.clone();
 
         tokio::spawn(async move {
             match incoming.await {
@@ -72,10 +74,11 @@ pub async fn run(
                                 let cip = client_ip.clone();
                                 let ql = ql.clone();
                                 let anon = anon.clone();
+                                let ipv6 = ipv6_enabled.clone();
 
                                 tokio::spawn(async move {
                                     if let Err(e) = handle_doq_stream(
-                                        send, recv, &cip, &bl, &st, &up, &ft, &bm, &ql, &anon,
+                                        send, recv, &cip, &bl, &st, &up, &ft, &bm, &ql, &anon, &ipv6,
                                     )
                                     .await
                                     {
@@ -113,6 +116,7 @@ async fn handle_doq_stream(
     blocking_mode: &Arc<RwLock<BlockingMode>>,
     query_log: &QueryLog,
     anonymize_ip: &Arc<AtomicBool>,
+    ipv6_enabled: &Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let mut len_buf = [0u8; 2];
     recv.read_exact(&mut len_buf).await?;
@@ -135,6 +139,7 @@ async fn handle_doq_stream(
         blocking_mode,
         query_log,
         anonymize_ip,
+        ipv6_enabled,
     )
     .await?;
 

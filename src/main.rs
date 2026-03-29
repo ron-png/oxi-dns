@@ -188,6 +188,9 @@ async fn main() -> anyhow::Result<()> {
     ));
     let log_retention_days =
         std::sync::Arc::new(tokio::sync::RwLock::new(config.log.retention_days));
+    let ipv6_enabled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
+        config.system.ipv6_enabled,
+    ));
 
     // Start DNS server (all protocols)
     let upstream_for_web = upstream.clone();
@@ -204,6 +207,7 @@ async fn main() -> anyhow::Result<()> {
         Some(dns_ready_tx),
         query_log.clone(),
         anonymize_ip.clone(),
+        ipv6_enabled.clone(),
     );
 
     let dns_handle = tokio::spawn(async move {
@@ -259,6 +263,7 @@ async fn main() -> anyhow::Result<()> {
         query_log,
         log_retention_days,
         anonymize_ip,
+        ipv6_enabled,
     };
 
     // Spawn background blocklist refresh task

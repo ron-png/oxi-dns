@@ -27,6 +27,7 @@ pub async fn process_dns_query(
     blocking_mode: &Arc<RwLock<BlockingMode>>,
     query_log: &QueryLog,
     anonymize_ip_flag: &Arc<AtomicBool>,
+    ipv6_enabled: &Arc<AtomicBool>,
 ) -> anyhow::Result<Vec<u8>> {
     let start = Instant::now();
     let request = Message::from_bytes(packet)?;
@@ -50,6 +51,38 @@ pub async fn process_dns_query(
     } else {
         client_ip.to_string()
     };
+
+    // If IPv6 is disabled, return empty response for AAAA queries
+    if query_type == RecordType::AAAA && !ipv6_enabled.load(Ordering::Relaxed) {
+        let response = build_empty_response(&request);
+        let response_bytes = response.to_vec()?;
+        let elapsed = start.elapsed().as_millis() as u64;
+
+        stats.record_query(QueryLogEntry {
+            timestamp: Utc::now(),
+            domain: domain_trimmed.to_string(),
+            query_type: format!("{:?}", query_type),
+            client_ip: client_ip.to_string(),
+            blocked: false,
+            response_time_ms: elapsed,
+            upstream: None,
+        });
+
+        query_log.insert(LogEntry {
+            id: 0,
+            timestamp: Utc::now(),
+            domain: domain_trimmed.to_string(),
+            query_type: format!("{:?}", query_type),
+            client_ip: client_ip_stored.clone(),
+            status: "filtered_ipv6".to_string(),
+            block_source: None,
+            block_feature: None,
+            response_time_ms: elapsed,
+            upstream: None,
+        });
+
+        return Ok(response_bytes);
+    }
 
     // Check safe search rewriting (A and AAAA queries)
     if query_type == RecordType::A || query_type == RecordType::AAAA {
@@ -153,6 +186,14 @@ pub async fn process_dns_query(
 
     // Forward to upstream
     let (response_bytes, upstream_used) = upstream.forward(packet).await?;
+
+    // Filter AAAA records from upstream response if IPv6 is disabled
+    let response_bytes = if !ipv6_enabled.load(Ordering::Relaxed) {
+        filter_aaaa_records(&response_bytes).unwrap_or(response_bytes)
+    } else {
+        response_bytes
+    };
+
     let elapsed = start.elapsed().as_millis() as u64;
 
     stats.record_query(QueryLogEntry {
@@ -373,4 +414,28 @@ fn build_empty_response(request: &Message) -> Message {
         response.add_query(query.clone());
     }
     response
+}
+
+/// Remove AAAA records from a DNS response.
+fn filter_aaaa_records(response_bytes: &[u8]) -> anyhow::Result<Vec<u8>> {
+    let response = Message::from_bytes(response_bytes)?;
+    let mut new_response = Message::new();
+    new_response.set_header(*response.header());
+    for q in response.queries() {
+        new_response.add_query(q.clone());
+    }
+    for a in response.answers() {
+        if a.record_type() != RecordType::AAAA {
+            new_response.add_answer(a.clone());
+        }
+    }
+    for ns in response.name_servers() {
+        new_response.add_name_server(ns.clone());
+    }
+    for ad in response.additionals() {
+        if ad.record_type() != RecordType::AAAA {
+            new_response.add_additional(ad.clone());
+        }
+    }
+    Ok(new_response.to_vec()?)
 }

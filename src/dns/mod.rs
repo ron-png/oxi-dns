@@ -30,6 +30,7 @@ pub struct DnsServer {
     ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
+    ipv6_enabled: Arc<AtomicBool>,
 }
 
 impl DnsServer {
@@ -46,6 +47,7 @@ impl DnsServer {
         ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
         query_log: QueryLog,
         anonymize_ip: Arc<AtomicBool>,
+        ipv6_enabled: Arc<AtomicBool>,
     ) -> Self {
         Self {
             config,
@@ -59,6 +61,7 @@ impl DnsServer {
             ready_tx,
             query_log,
             anonymize_ip,
+            ipv6_enabled,
         }
     }
 
@@ -78,10 +81,11 @@ impl DnsServer {
             let ready_tx = if first_udp { self.ready_tx.take() } else { None };
             let ql = self.query_log.clone();
             let anon = self.anonymize_ip.clone();
+            let ipv6 = self.ipv6_enabled.clone();
             info!("Starting plain DNS (UDP) on {}", addr);
             handles.push(tokio::spawn(async move {
                 if let Err(e) =
-                    listener_udp::run(addr, bl, st, up, ft, bm, ready_tx, ql, anon).await
+                    listener_udp::run(addr, bl, st, up, ft, bm, ready_tx, ql, anon, ipv6).await
                 {
                     tracing::error!("UDP DNS listener error: {}", e);
                 }
@@ -101,9 +105,10 @@ impl DnsServer {
                 let tls = tls_config.clone();
                 let ql = self.query_log.clone();
                 let anon = self.anonymize_ip.clone();
+                let ipv6 = self.ipv6_enabled.clone();
                 info!("Starting DNS-over-TLS on {}", addr);
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = listener_dot::run(addr, bl, st, up, ft, bm, tls, ql, anon).await {
+                    if let Err(e) = listener_dot::run(addr, bl, st, up, ft, bm, tls, ql, anon, ipv6).await {
                         tracing::error!("DoT listener error: {}", e);
                     }
                 }));
@@ -122,9 +127,10 @@ impl DnsServer {
                 let tls = tls_config.clone();
                 let ql = self.query_log.clone();
                 let anon = self.anonymize_ip.clone();
+                let ipv6 = self.ipv6_enabled.clone();
                 info!("Starting DNS-over-HTTPS on {}", addr);
                 handles.push(tokio::spawn(async move {
-                    if let Err(e) = listener_doh::run(addr, bl, st, up, ft, bm, tls, ql, anon).await {
+                    if let Err(e) = listener_doh::run(addr, bl, st, up, ft, bm, tls, ql, anon, ipv6).await {
                         tracing::error!("DoH listener error: {}", e);
                     }
                 }));
@@ -144,10 +150,11 @@ impl DnsServer {
                     let qc = quic_config.clone();
                     let ql = self.query_log.clone();
                     let anon = self.anonymize_ip.clone();
+                    let ipv6 = self.ipv6_enabled.clone();
                     info!("Starting DNS-over-QUIC on {}", addr);
                     handles.push(tokio::spawn(async move {
                         if let Err(e) =
-                            listener_doq::run(addr, bl, st, up, ft, bm, qc, ql, anon).await
+                            listener_doq::run(addr, bl, st, up, ft, bm, qc, ql, anon, ipv6).await
                         {
                             tracing::error!("DoQ listener error: {}", e);
                         }

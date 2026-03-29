@@ -37,6 +37,7 @@ pub async fn run(
     ready_tx: Option<tokio::sync::oneshot::Sender<()>>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
+    ipv6_enabled: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let std_socket = bind_udp_reuse_port(&addr)?;
     let socket = Arc::new(UdpSocket::from_std(std_socket)?);
@@ -63,11 +64,12 @@ pub async fn run(
         let bm = blocking_mode.clone();
         let ql = query_log.clone();
         let anon = anonymize_ip.clone();
+        let ipv6 = ipv6_enabled.clone();
 
         tokio::spawn(async move {
             let client_ip = src.ip().to_string();
             match handler::process_dns_query(
-                &packet, &client_ip, &bl, &up, &st, &ft, &bm, &ql, &anon,
+                &packet, &client_ip, &bl, &up, &st, &ft, &bm, &ql, &anon, &ipv6,
             )
             .await
             {

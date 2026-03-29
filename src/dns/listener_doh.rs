@@ -45,6 +45,7 @@ struct DohState {
     blocking_mode: Arc<RwLock<BlockingMode>>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
+    ipv6_enabled: Arc<AtomicBool>,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -58,6 +59,7 @@ pub async fn run(
     tls_config: Arc<rustls::ServerConfig>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
+    ipv6_enabled: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let state = DohState {
         blocklist,
@@ -67,6 +69,7 @@ pub async fn run(
         blocking_mode,
         query_log,
         anonymize_ip,
+        ipv6_enabled,
     };
 
     let app = Router::new()
@@ -153,6 +156,7 @@ async fn doh_get(
         &state.blocking_mode,
         &state.query_log,
         &state.anonymize_ip,
+        &state.ipv6_enabled,
     )
     .await
     {
@@ -187,6 +191,7 @@ async fn doh_post(State(state): State<DohState>, req: axum::extract::Request) ->
         &state.blocking_mode,
         &state.query_log,
         &state.anonymize_ip,
+        &state.ipv6_enabled,
     )
     .await
     {

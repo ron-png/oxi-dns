@@ -40,6 +40,7 @@ pub async fn run(
     tls_config: Arc<rustls::ServerConfig>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
+    ipv6_enabled: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let std_listener = bind_tcp_reuse_port(&addr)?;
     let listener = TcpListener::from_std(std_listener)?;
@@ -63,6 +64,7 @@ pub async fn run(
         let bm = blocking_mode.clone();
         let ql = query_log.clone();
         let anon = anonymize_ip.clone();
+        let ipv6 = ipv6_enabled.clone();
 
         tokio::spawn(async move {
             match acceptor.accept(tcp_stream).await {
@@ -77,6 +79,7 @@ pub async fn run(
                         &bm,
                         &ql,
                         &anon,
+                        &ipv6,
                     )
                     .await
                     {
@@ -100,6 +103,7 @@ async fn handle_dot_connection(
     blocking_mode: &Arc<RwLock<BlockingMode>>,
     query_log: &QueryLog,
     anonymize_ip: &Arc<AtomicBool>,
+    ipv6_enabled: &Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     loop {
         let mut len_buf = [0u8; 2];
@@ -126,6 +130,7 @@ async fn handle_dot_connection(
             blocking_mode,
             query_log,
             anonymize_ip,
+            ipv6_enabled,
         )
         .await?;
 

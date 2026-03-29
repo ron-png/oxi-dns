@@ -111,11 +111,23 @@ pub struct BlockingConfig {
     pub blocking_mode: BlockingMode,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemConfig {
     /// Whether to automatically check for and apply updates. Updates are health-checked before applying.
     #[serde(default)]
     pub auto_update: bool,
+    /// Whether to include AAAA (IPv6) records in DNS responses.
+    #[serde(default = "default_true")]
+    pub ipv6_enabled: bool,
+}
+
+impl Default for SystemConfig {
+    fn default() -> Self {
+        Self {
+            auto_update: false,
+            ipv6_enabled: true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
