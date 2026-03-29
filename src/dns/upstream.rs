@@ -1082,41 +1082,64 @@ impl UpstreamForwarder {
     ) -> Option<(Vec<u8>, hickory_proto::op::Message)> {
         use hickory_proto::serialize::binary::BinDecodable;
 
-        for server in servers {
-            match self.forward_udp(packet, *server).await {
-                Ok(bytes) => match hickory_proto::op::Message::from_bytes(&bytes) {
-                    Ok(msg) => {
-                        // TC bit set — retry over TCP
-                        if msg.header().truncated() {
-                            debug!("Truncated response from {}, retrying via TCP", server);
-                            match self.forward_tcp(packet, *server).await {
-                                Ok(tcp_bytes) => {
-                                    match hickory_proto::op::Message::from_bytes(&tcp_bytes) {
-                                        Ok(tcp_msg) => return Some((tcp_bytes, tcp_msg)),
-                                        Err(e) => {
-                                            warn!("Iterative: bad TCP response from {}: {}", server, e);
+        // Pick up to 3 random servers to query in parallel
+        let selected: Vec<SocketAddr> = {
+            use rand::seq::SliceRandom;
+            let mut rng = rand::rng();
+            let mut v: Vec<SocketAddr> = servers.to_vec();
+            v.shuffle(&mut rng);
+            v.truncate(3);
+            v
+        };
+
+        let (tx, mut rx) =
+            tokio::sync::mpsc::channel::<(Vec<u8>, hickory_proto::op::Message)>(selected.len());
+
+        for server in &selected {
+            let tx = tx.clone();
+            let forwarder = self.clone();
+            let packet = packet.to_vec();
+            let server = *server;
+
+            tokio::spawn(async move {
+                match forwarder.forward_udp(&packet, server).await {
+                    Ok(bytes) => {
+                        match hickory_proto::op::Message::from_bytes(&bytes) {
+                            Ok(msg) => {
+                                // TC bit — retry over TCP
+                                if msg.header().truncated() {
+                                    debug!("Truncated response from {}, retrying via TCP", server);
+                                    if let Ok(tcp_bytes) =
+                                        forwarder.forward_tcp(&packet, server).await
+                                    {
+                                        if let Ok(tcp_msg) =
+                                            hickory_proto::op::Message::from_bytes(&tcp_bytes)
+                                        {
+                                            let _ = tx.send((tcp_bytes, tcp_msg)).await;
+                                            return;
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    warn!("Iterative: TCP retry to {} failed: {}", server, e);
+                                    // TCP failed — still send truncated UDP response
+                                    let _ = tx.send((bytes, msg)).await;
+                                } else {
+                                    let _ = tx.send((bytes, msg)).await;
                                 }
                             }
-                            // If TCP also failed, still return the truncated UDP response
-                            return Some((bytes, msg));
+                            Err(e) => {
+                                warn!("Iterative: bad response from {}: {}", server, e);
+                            }
                         }
-                        return Some((bytes, msg));
                     }
                     Err(e) => {
-                        warn!("Iterative: bad response from {}: {}", server, e);
+                        warn!("Iterative: {} failed: {}", server, e);
                     }
-                },
-                Err(e) => {
-                    warn!("Iterative: {} failed: {}", server, e);
                 }
-            }
+            });
         }
-        None
+        drop(tx);
+
+        // Return the first successful response
+        rx.recv().await
     }
 
     // ==================== Transport methods ====================

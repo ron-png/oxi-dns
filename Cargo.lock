@@ -1136,6 +1136,7 @@ dependencies = [
  "hyper",
  "hyper-util",
  "quinn",
+ "rand",
  "rcgen",
  "reqwest",
  "rusqlite",
