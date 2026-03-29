@@ -281,10 +281,7 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
         }
 
         if next_servers.is_empty() {
-            anyhow::bail!(
-                "Root fallback: no glue records for {} referral",
-                host
-            );
+            anyhow::bail!("Root fallback: no glue records for {} referral", host);
         }
 
         current_servers = next_servers;
