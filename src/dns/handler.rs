@@ -16,6 +16,7 @@ use tokio::sync::RwLock;
 use tracing::debug;
 
 /// Process a DNS query: check safe search, check blocklist, forward if allowed.
+#[allow(clippy::too_many_arguments)]
 pub async fn process_dns_query(
     packet: &[u8],
     client_ip: &str,
@@ -251,21 +252,19 @@ fn build_blocked_response(
     let name = Name::from_ascii(domain).unwrap_or_default();
 
     match mode {
-        BlockingMode::Default | BlockingMode::NullIp => {
-            match query_type {
-                RecordType::A => {
-                    let rdata = RData::A("0.0.0.0".parse().unwrap());
-                    let record = Record::from_rdata(name, 300, rdata);
-                    response.add_answer(record);
-                }
-                RecordType::AAAA => {
-                    let rdata = RData::AAAA("::".parse().unwrap());
-                    let record = Record::from_rdata(name, 300, rdata);
-                    response.add_answer(record);
-                }
-                _ => {}
+        BlockingMode::Default | BlockingMode::NullIp => match query_type {
+            RecordType::A => {
+                let rdata = RData::A("0.0.0.0".parse().unwrap());
+                let record = Record::from_rdata(name, 300, rdata);
+                response.add_answer(record);
             }
-        }
+            RecordType::AAAA => {
+                let rdata = RData::AAAA("::".parse().unwrap());
+                let record = Record::from_rdata(name, 300, rdata);
+                response.add_answer(record);
+            }
+            _ => {}
+        },
         BlockingMode::CustomIp { ipv4, ipv6 } => match query_type {
             RecordType::A => {
                 let rdata = RData::A((*ipv4).into());

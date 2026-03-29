@@ -11,6 +11,7 @@ use tokio::net::UdpSocket;
 use tokio::sync::RwLock;
 use tracing::{debug, error};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     addr: String,
     blocklist: BlocklistManager,

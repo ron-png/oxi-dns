@@ -112,7 +112,7 @@ impl QueryLog {
 
     /// Search the query log with filters and cursor-based pagination.
     pub async fn search(&self, params: LogQueryParams) -> anyhow::Result<LogPage> {
-        let limit = params.limit.min(200).max(1);
+        let limit = params.limit.clamp(1, 200);
 
         let conn = self.conn.clone();
         conn.call(move |conn| {
@@ -166,17 +166,13 @@ impl QueryLog {
 
             // Expand bind_values: search pattern is used 5 times in the LIKE clause
             let mut final_params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
-            let mut value_idx = 0;
 
-            for clause in &where_clauses {
+            for (value_idx, clause) in where_clauses.iter().enumerate() {
                 let count = clause.matches("?N").count();
                 for _ in 0..count {
-                    // Clone the value for each occurrence
                     let val = &bind_values[value_idx];
-                    // We need to re-create the boxed value
                     final_params.push(clone_sql_value(val.as_ref()));
                 }
-                value_idx += 1;
             }
 
             let sql = format!(
@@ -273,10 +269,7 @@ pub fn anonymize_ip(ip: &str) -> String {
         format!("{}.{}.{}.0", octets[0], octets[1], octets[2])
     } else if let Ok(v6) = ip.parse::<std::net::Ipv6Addr>() {
         let segments = v6.segments();
-        format!(
-            "{:x}:{:x}:{:x}::",
-            segments[0], segments[1], segments[2]
-        )
+        format!("{:x}:{:x}:{:x}::", segments[0], segments[1], segments[2])
     } else {
         ip.to_string()
     }

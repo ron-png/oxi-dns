@@ -13,6 +13,7 @@ use tokio::sync::RwLock;
 use tokio_rustls::TlsAcceptor;
 use tracing::{debug, error, info};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     addr: String,
     blocklist: BlocklistManager,

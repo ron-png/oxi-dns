@@ -10,6 +10,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     addr: String,
     blocklist: BlocklistManager,

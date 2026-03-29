@@ -62,9 +62,8 @@ impl AppState {
         config.system.auto_update = *self.auto_update.read().await;
         config.blocking.blocking_mode = self.blocking_mode.read().await.clone();
         config.log.retention_days = *self.log_retention_days.read().await;
-        config.log.anonymize_client_ip = self
-            .anonymize_ip
-            .load(std::sync::atomic::Ordering::Relaxed);
+        config.log.anonymize_client_ip =
+            self.anonymize_ip.load(std::sync::atomic::Ordering::Relaxed);
 
         if let Err(e) = config.save(&self.config_path) {
             tracing::warn!("Failed to save config: {}", e);

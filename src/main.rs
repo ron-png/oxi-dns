@@ -119,9 +119,8 @@ async fn main() -> anyhow::Result<()> {
     let anonymize_ip = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(
         config.log.anonymize_client_ip,
     ));
-    let log_retention_days = std::sync::Arc::new(tokio::sync::RwLock::new(
-        config.log.retention_days,
-    ));
+    let log_retention_days =
+        std::sync::Arc::new(tokio::sync::RwLock::new(config.log.retention_days));
 
     // Start DNS server (all protocols)
     let upstream_for_web = upstream.clone();

@@ -205,8 +205,7 @@ impl FeatureManager {
                 let mut all_rules = self.safe_search_rules.write().await;
                 all_rules.clear();
                 if other_safe_search_enabled {
-                    if let Ok(rules) =
-                        Self::fetch_rules(SAFE_SEARCH_LIST_URL, "safe_search").await
+                    if let Ok(rules) = Self::fetch_rules(SAFE_SEARCH_LIST_URL, "safe_search").await
                     {
                         all_rules.extend(rules);
                     }

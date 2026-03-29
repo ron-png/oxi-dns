@@ -31,6 +31,7 @@ struct DohState {
     anonymize_ip: Arc<AtomicBool>,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     addr: String,
     blocklist: BlocklistManager,
