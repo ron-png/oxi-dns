@@ -10,6 +10,21 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
+fn bind_udp_reuse_port(addr: &str) -> anyhow::Result<std::net::UdpSocket> {
+    use socket2::{Domain, Protocol, Socket, Type};
+    let sock_addr: std::net::SocketAddr = addr.parse()?;
+    let domain = if sock_addr.is_ipv4() {
+        Domain::IPV4
+    } else {
+        Domain::IPV6
+    };
+    let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+    socket.set_reuse_port(true)?;
+    socket.set_nonblocking(true)?;
+    socket.bind(&sock_addr.into())?;
+    Ok(socket.into())
+}
+
 #[allow(clippy::too_many_arguments)]
 pub async fn run(
     addr: String,
@@ -21,8 +36,19 @@ pub async fn run(
     quic_config: quinn::ServerConfig,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
+    reuse_port: bool,
 ) -> anyhow::Result<()> {
-    let endpoint = quinn::Endpoint::server(quic_config, addr.parse()?)?;
+    let endpoint = if reuse_port {
+        let std_socket = bind_udp_reuse_port(&addr)?;
+        quinn::Endpoint::new(
+            quinn::EndpointConfig::default(),
+            Some(quic_config),
+            std_socket,
+            quinn::default_runtime().unwrap(),
+        )?
+    } else {
+        quinn::Endpoint::server(quic_config, addr.parse()?)?
+    };
     info!("DoQ listener ready on {}", addr);
 
     while let Some(incoming) = endpoint.accept().await {
