@@ -19,7 +19,6 @@ async fn main() -> anyhow::Result<()> {
     // Parse CLI arguments
     let args: Vec<String> = std::env::args().collect();
     let mut health_check = false;
-    let mut takeover = false;
     let mut ready_file: Option<PathBuf> = None;
     let mut config_arg: Option<String> = None;
 
@@ -31,7 +30,7 @@ async fn main() -> anyhow::Result<()> {
                 return Ok(());
             }
             "--health-check" => health_check = true,
-            "--takeover" => takeover = true,
+            "--takeover" => {} // SO_REUSEPORT is always enabled; readiness signaled via --ready-file
             "--ready-file" => {
                 i += 1;
                 ready_file =
