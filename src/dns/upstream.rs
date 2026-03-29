@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,6 +21,23 @@ const ROOT_SERVERS: &[Ipv4Addr] = &[
     Ipv4Addr::new(193, 0, 14, 129),   // k.root-servers.net
     Ipv4Addr::new(199, 7, 83, 42),    // l.root-servers.net
     Ipv4Addr::new(202, 12, 27, 33),   // m.root-servers.net
+];
+
+/// DNS root server addresses (IPv6).
+const ROOT_SERVERS_V6: &[Ipv6Addr] = &[
+    Ipv6Addr::new(0x2001, 0x0503, 0xba3e, 0, 0, 0, 0x0002, 0x0030), // a.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x0200, 0, 0, 0, 0, 0x000b),       // b.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x0002, 0, 0, 0, 0, 0x000c),       // c.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x002d, 0, 0, 0, 0, 0x000d),       // d.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x00a8, 0, 0, 0, 0, 0x000e),       // e.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x002f, 0, 0, 0, 0, 0x000f),       // f.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x0012, 0, 0, 0, 0, 0x0d0d),       // g.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x0001, 0, 0, 0, 0, 0x0053),       // h.root-servers.net
+    Ipv6Addr::new(0x2001, 0x07fe, 0, 0, 0, 0, 0, 0x0053),             // i.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0503, 0x0c27, 0, 0, 0, 0x0002, 0x0030), // j.root-servers.net
+    Ipv6Addr::new(0x2001, 0x07fd, 0, 0, 0, 0, 0, 0x0001),             // k.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0500, 0x009f, 0, 0, 0, 0, 0x0042),       // l.root-servers.net
+    Ipv6Addr::new(0x2001, 0x0dc3, 0, 0, 0, 0, 0, 0x0035),             // m.root-servers.net
 ];
 
 const MAX_REFERRAL_DEPTH: usize = 10;
@@ -211,6 +228,7 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
     let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
         .iter()
         .map(|ip| SocketAddr::new(IpAddr::V4(*ip), 53))
+        .chain(ROOT_SERVERS_V6.iter().map(|ip| SocketAddr::new(IpAddr::V6(*ip), 53)))
         .collect();
 
     for _depth in 0..MAX_REFERRAL_DEPTH {
@@ -242,8 +260,23 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
                 _ => None,
             })
             .collect();
-        if !addrs.is_empty() {
-            return Ok(addrs);
+        // Also try AAAA if we got A records (or even if we didn't, to collect both)
+        let mut all_addrs = addrs;
+        {
+            let aaaa_packet = build_query(random_query_id(), &name, RecordType::AAAA, false)?;
+            for server in &current_servers {
+                if let Ok(aaaa_resp) = udp_query(&aaaa_packet, *server, timeout).await {
+                    for r in aaaa_resp.answers() {
+                        if let RData::AAAA(ip) = r.data() {
+                            all_addrs.push(SocketAddr::new(IpAddr::V6(ip.0), port));
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+        if !all_addrs.is_empty() {
+            return Ok(all_addrs);
         }
 
         // NXDOMAIN or non-NOERROR — give up
@@ -271,12 +304,16 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
 
         let mut next_servers = Vec::new();
         for record in resp.additionals() {
-            if record.record_type() == RecordType::A {
-                if let RData::A(ip) = record.data() {
-                    let rec_name = record.name().to_ascii();
-                    if ns_names.iter().any(|n| n == &rec_name) {
+            let rec_name = record.name().to_ascii();
+            if ns_names.iter().any(|n| n == &rec_name) {
+                match record.data() {
+                    RData::A(ip) => {
                         next_servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
                     }
+                    RData::AAAA(ip) => {
+                        next_servers.push(SocketAddr::new(IpAddr::V6(ip.0), 53));
+                    }
+                    _ => {}
                 }
             }
         }
