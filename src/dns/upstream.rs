@@ -1083,7 +1083,28 @@ impl UpstreamForwarder {
         for server in servers {
             match self.forward_udp(packet, *server).await {
                 Ok(bytes) => match hickory_proto::op::Message::from_bytes(&bytes) {
-                    Ok(msg) => return Some((bytes, msg)),
+                    Ok(msg) => {
+                        // TC bit set — retry over TCP
+                        if msg.header().truncated() {
+                            debug!("Truncated response from {}, retrying via TCP", server);
+                            match self.forward_tcp(packet, *server).await {
+                                Ok(tcp_bytes) => {
+                                    match hickory_proto::op::Message::from_bytes(&tcp_bytes) {
+                                        Ok(tcp_msg) => return Some((tcp_bytes, tcp_msg)),
+                                        Err(e) => {
+                                            warn!("Iterative: bad TCP response from {}: {}", server, e);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    warn!("Iterative: TCP retry to {} failed: {}", server, e);
+                                }
+                            }
+                            // If TCP also failed, still return the truncated UDP response
+                            return Some((bytes, msg));
+                        }
+                        return Some((bytes, msg));
+                    }
                     Err(e) => {
                         warn!("Iterative: bad response from {}: {}", server, e);
                     }
@@ -1111,6 +1132,32 @@ impl UpstreamForwarder {
         let mut buf = vec![0u8; 4096];
         let (len, _) = tokio::time::timeout(self.timeout, socket.recv_from(&mut buf)).await??;
         Ok(buf[..len].to_vec())
+    }
+
+    /// Plain TCP forwarding (for TC=1 retry). Uses 2-byte length prefix per RFC 1035 4.2.2.
+    async fn forward_tcp(&self, packet: &[u8], addr: SocketAddr) -> anyhow::Result<Vec<u8>> {
+        let tcp = tokio::time::timeout(
+            self.timeout,
+            tokio::net::TcpStream::connect(addr),
+        )
+        .await??;
+
+        let mut stream = tcp;
+        let len = (packet.len() as u16).to_be_bytes();
+        tokio::time::timeout(self.timeout, async {
+            stream.write_all(&len).await?;
+            stream.write_all(packet).await?;
+            stream.flush().await?;
+
+            let mut resp_len_buf = [0u8; 2];
+            stream.read_exact(&mut resp_len_buf).await?;
+            let resp_len = u16::from_be_bytes(resp_len_buf) as usize;
+
+            let mut resp_buf = vec![0u8; resp_len];
+            stream.read_exact(&mut resp_buf).await?;
+            Ok::<Vec<u8>, anyhow::Error>(resp_buf)
+        })
+        .await?
     }
 
     /// DNS-over-TLS forwarding. Races all resolved addresses in parallel,
@@ -1576,5 +1623,20 @@ mod cache_tests {
         let key1 = make_cache_key("example.com.", 1);
         let key2 = make_cache_key("example.com", 1);
         assert_eq!(key1, key2);
+    }
+
+    #[test]
+    fn truncated_flag_detected() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        header.set_truncated(true);
+        msg.set_header(header);
+
+        assert!(msg.header().truncated());
     }
 }
