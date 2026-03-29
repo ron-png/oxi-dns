@@ -102,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
             client_tls_config,
             quic_client_config,
         )?;
+        upstream.set_cache_enabled(config.dns.cache_enabled);
         info!("Health check: upstreams OK");
 
         // Send a test DNS query through the upstream pipeline
@@ -162,6 +163,7 @@ async fn main() -> anyhow::Result<()> {
         client_tls_config,
         quic_client_config,
     )?;
+    upstream.set_cache_enabled(config.dns.cache_enabled);
 
     // Initialize features (with upstream reference for root servers toggle)
     let mut feature_manager = features::FeatureManager::new(blocklist_manager.clone());

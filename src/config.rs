@@ -67,6 +67,9 @@ pub struct DnsConfig {
     /// Timeout for upstream queries in milliseconds
     #[serde(default = "default_timeout_ms")]
     pub timeout_ms: u64,
+    /// Enable DNS response caching
+    #[serde(default = "default_cache_enabled")]
+    pub cache_enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -235,6 +238,7 @@ fn default_dns() -> DnsConfig {
         doq_listen: None,
         upstreams: default_upstreams(),
         timeout_ms: default_timeout_ms(),
+        cache_enabled: default_cache_enabled(),
     }
 }
 
@@ -261,6 +265,10 @@ fn default_upstreams() -> Vec<String> {
 
 fn default_timeout_ms() -> u64 {
     5000
+}
+
+fn default_cache_enabled() -> bool {
+    true
 }
 
 fn default_true() -> bool {
