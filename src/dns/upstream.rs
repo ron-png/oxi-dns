@@ -183,7 +183,8 @@ async fn udp_query(
 ) -> anyhow::Result<hickory_proto::op::Message> {
     use hickory_proto::serialize::binary::BinDecodable;
 
-    let socket = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
+    let bind_addr = if server.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+    let socket = tokio::net::UdpSocket::bind(bind_addr).await?;
     socket.send_to(packet, server).await?;
 
     let mut buf = vec![0u8; 4096];
@@ -863,7 +864,8 @@ impl UpstreamForwarder {
 
     /// Plain UDP forwarding.
     async fn forward_udp(&self, packet: &[u8], addr: SocketAddr) -> anyhow::Result<Vec<u8>> {
-        let socket = UdpSocket::bind("0.0.0.0:0").await?;
+        let bind_addr = if addr.is_ipv4() { "0.0.0.0:0" } else { "[::]:0" };
+        let socket = UdpSocket::bind(bind_addr).await?;
         socket.send_to(packet, addr).await?;
 
         let mut buf = vec![0u8; 4096];
@@ -1066,7 +1068,12 @@ impl UpstreamForwarder {
         addr: SocketAddr,
         hostname: &str,
     ) -> anyhow::Result<Vec<u8>> {
-        let mut endpoint = quinn::Endpoint::client("0.0.0.0:0".parse()?)?;
+        let bind_addr: std::net::SocketAddr = if addr.is_ipv4() {
+            "0.0.0.0:0".parse()?
+        } else {
+            "[::]:0".parse()?
+        };
+        let mut endpoint = quinn::Endpoint::client(bind_addr)?;
         endpoint.set_default_client_config(self.quic_client_config.clone());
 
         let connection =
