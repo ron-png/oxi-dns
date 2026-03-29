@@ -113,7 +113,7 @@ pub struct BlockingConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SystemConfig {
-    /// Whether to auto-update the server. Warning: An update could cause unforseeable bugs which could lead to the dns service breaking.
+    /// Whether to automatically check for and apply updates. Updates are health-checked before applying.
     #[serde(default)]
     pub auto_update: bool,
 }

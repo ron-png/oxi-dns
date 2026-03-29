@@ -1012,8 +1012,9 @@
                 <div class="setting-row">
                     <div class="setting-info">
                         <h3>Auto-Update Server</h3>
-                        <p class="warning">Warning: An update could cause unforeseeable bugs which could lead to the DNS
-                            service breaking. Therefore unattended updates can cause longer downtimes.</p>
+                        <p class="warning">When enabled, oxi-hole automatically checks for updates every 8 hours. New
+                            versions are health-checked before being applied. If a health check fails, the
+                            current version continues running and a notification is shown.</p>
                     </div>
                     <label class="toggle-switch" id="toggle-autoupdate">
                         <input type="checkbox" id="autoUpdateCheckbox" onchange="toggleAutoUpdate(this.checked)">
