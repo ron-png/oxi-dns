@@ -205,7 +205,7 @@ async fn main() -> anyhow::Result<()> {
         Some(dns_ready_tx),
         query_log.clone(),
         anonymize_ip.clone(),
-        false, // reuse_port: only true for --takeover mode
+        takeover, // reuse_port: only true for --takeover mode
     );
 
     let dns_handle = tokio::spawn(async move {
@@ -217,6 +217,15 @@ async fn main() -> anyhow::Result<()> {
     // Wait for DNS server to be ready before loading blocklists, so that
     // machines using oxi-hole as their own resolver can fetch remote lists.
     let _ = dns_ready_rx.await;
+
+    // In takeover mode, signal readiness via ready file
+    if let Some(ref path) = ready_file {
+        if let Err(e) = std::fs::write(path, "ready") {
+            tracing::error!("Failed to write ready file: {}", e);
+        } else {
+            info!("Takeover ready — wrote {}", path.display());
+        }
+    }
 
     // Load blocklists now that DNS is available
     blocklist_manager
@@ -293,7 +302,7 @@ async fn main() -> anyhow::Result<()> {
 
     let web_listen = config.web.listen.clone();
     let web_handle = tokio::spawn(async move {
-        if let Err(e) = web::run_web_server(&web_listen, web_state).await {
+        if let Err(e) = web::run_web_server(&web_listen, web_state, takeover).await {
             tracing::error!("Web server error: {}", e);
         }
     });
