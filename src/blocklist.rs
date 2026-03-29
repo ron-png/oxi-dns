@@ -313,14 +313,14 @@ fn parse_blocklist(content: &str) -> Vec<String> {
             }
         }
 
-        // Adblock-style: ||domain.com^
+        // Adblock-style: ||domain.com^ with optional modifiers (e.g. ^$third-party, ^|)
         if let Some(rest) = line.strip_prefix("||") {
-            if let Some(domain) = rest.strip_suffix('^') {
-                let domain = domain.trim();
-                if is_valid_domain(domain) {
-                    domains.push(normalize_domain(domain));
-                    continue;
-                }
+            // Split at '^' to strip the anchor and any trailing modifiers
+            let bare = rest.split('^').next().unwrap_or(rest);
+            let domain = bare.trim();
+            if is_valid_domain(domain) {
+                domains.push(normalize_domain(domain));
+                continue;
             }
         }
 
@@ -378,6 +378,20 @@ mod tests {
         let content = "||ads.example.com^\n||tracker.example.com^\n";
         let domains = parse_blocklist(content);
         assert_eq!(domains, vec!["ads.example.com", "tracker.example.com"]);
+    }
+
+    #[test]
+    fn test_parse_adblock_with_modifiers() {
+        let content = "||ads.example.com^$third-party\n||tracker.example.com^$important\n||banner.example.com^|\n";
+        let domains = parse_blocklist(content);
+        assert_eq!(
+            domains,
+            vec![
+                "ads.example.com",
+                "tracker.example.com",
+                "banner.example.com"
+            ]
+        );
     }
 
     #[test]
