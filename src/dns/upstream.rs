@@ -1760,4 +1760,50 @@ mod cache_tests {
         assert!(!servers.is_empty(), "Should extract AAAA glue records");
         assert!(servers[0].is_ipv6());
     }
+
+    #[test]
+    fn cache_roundtrip_store_and_lookup() {
+        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
+        use hickory_proto::rr::{Name, RData, Record};
+        use hickory_proto::serialize::binary::BinDecodable;
+
+        let cache: DashMap<(String, u16), CacheEntry> = DashMap::new();
+
+        // Build a response
+        let mut msg = Message::new();
+        let mut header = Header::new();
+        header.set_id(1);
+        header.set_message_type(MessageType::Response);
+        header.set_response_code(ResponseCode::NoError);
+        msg.set_header(header);
+        let name = Name::from_ascii("test.example.com.").unwrap();
+        let record = Record::from_rdata(name, 300, RData::A("93.184.216.34".parse().unwrap()));
+        msg.add_answer(record);
+        let response_bytes = msg.to_vec().unwrap();
+
+        // Store
+        let key = make_cache_key("test.example.com.", 1); // RecordType::A = 1
+        let ttl = extract_min_ttl(&msg);
+        cache.insert(
+            key.clone(),
+            CacheEntry {
+                response_bytes: response_bytes.clone(),
+                expires_at: Instant::now() + Duration::from_secs(ttl as u64),
+                inserted_at: Instant::now(),
+            },
+        );
+
+        // Lookup
+        let entry = cache.get(&key).unwrap();
+        assert!(!entry.is_expired());
+        assert_eq!(entry.response_bytes, response_bytes);
+
+        // Rewrite TTLs
+        let remaining = entry.expires_at.duration_since(Instant::now());
+        let rewritten = rewrite_response_ttls(&entry.response_bytes, remaining).unwrap();
+        let parsed = Message::from_bytes(&rewritten).unwrap();
+        assert!(!parsed.answers().is_empty());
+        assert!(parsed.answers()[0].ttl() <= 300);
+        assert!(parsed.answers()[0].ttl() > 0);
+    }
 }
