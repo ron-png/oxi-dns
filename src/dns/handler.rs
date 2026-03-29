@@ -468,12 +468,20 @@ mod tests {
     #[test]
     fn default_mode_a_query_returns_noerror_with_zero_ip() {
         let req = make_request("blocked.example.", RecordType::A);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::A, &BlockingMode::Default);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::A,
+            &BlockingMode::Default,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::NoError);
         assert_eq!(resp.answers().len(), 1);
         match resp.answers()[0].data() {
-            RData::A(ip) => assert_eq!(std::net::Ipv4Addr::from(*ip), "0.0.0.0".parse::<Ipv4Addr>().unwrap()),
+            RData::A(ip) => assert_eq!(
+                std::net::Ipv4Addr::from(*ip),
+                "0.0.0.0".parse::<Ipv4Addr>().unwrap()
+            ),
             other => panic!("expected A record, got {:?}", other),
         }
         assert_eq!(resp.answers()[0].ttl(), 300);
@@ -482,12 +490,20 @@ mod tests {
     #[test]
     fn default_mode_aaaa_query_returns_noerror_with_zero_ipv6() {
         let req = make_request("blocked.example.", RecordType::AAAA);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::AAAA, &BlockingMode::Default);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::AAAA,
+            &BlockingMode::Default,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::NoError);
         assert_eq!(resp.answers().len(), 1);
         match resp.answers()[0].data() {
-            RData::AAAA(ip) => assert_eq!(std::net::Ipv6Addr::from(*ip), "::".parse::<Ipv6Addr>().unwrap()),
+            RData::AAAA(ip) => assert_eq!(
+                std::net::Ipv6Addr::from(*ip),
+                "::".parse::<Ipv6Addr>().unwrap()
+            ),
             other => panic!("expected AAAA record, got {:?}", other),
         }
         assert_eq!(resp.answers()[0].ttl(), 300);
@@ -496,7 +512,12 @@ mod tests {
     #[test]
     fn default_mode_mx_query_returns_noerror_no_answers() {
         let req = make_request("blocked.example.", RecordType::MX);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::MX, &BlockingMode::Default);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::MX,
+            &BlockingMode::Default,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::NoError);
         assert!(resp.answers().is_empty());
@@ -507,7 +528,12 @@ mod tests {
     #[test]
     fn refused_mode_a_query_returns_refused_no_answers() {
         let req = make_request("blocked.example.", RecordType::A);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::A, &BlockingMode::Refused);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::A,
+            &BlockingMode::Refused,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::Refused);
         assert!(resp.answers().is_empty());
@@ -516,7 +542,12 @@ mod tests {
     #[test]
     fn refused_mode_aaaa_query_returns_refused_no_answers() {
         let req = make_request("blocked.example.", RecordType::AAAA);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::AAAA, &BlockingMode::Refused);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::AAAA,
+            &BlockingMode::Refused,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::Refused);
         assert!(resp.answers().is_empty());
@@ -527,7 +558,12 @@ mod tests {
     #[test]
     fn nxdomain_mode_a_query_returns_nxdomain_no_answers() {
         let req = make_request("blocked.example.", RecordType::A);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::A, &BlockingMode::NxDomain);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::A,
+            &BlockingMode::NxDomain,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::NXDomain);
         assert!(resp.answers().is_empty());
@@ -536,7 +572,12 @@ mod tests {
     #[test]
     fn nxdomain_mode_aaaa_query_returns_nxdomain_no_answers() {
         let req = make_request("blocked.example.", RecordType::AAAA);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::AAAA, &BlockingMode::NxDomain);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::AAAA,
+            &BlockingMode::NxDomain,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::NXDomain);
         assert!(resp.answers().is_empty());
@@ -547,12 +588,20 @@ mod tests {
     #[test]
     fn null_ip_mode_a_query_returns_noerror_with_zero_ip() {
         let req = make_request("blocked.example.", RecordType::A);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::A, &BlockingMode::NullIp);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::A,
+            &BlockingMode::NullIp,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::NoError);
         assert_eq!(resp.answers().len(), 1);
         match resp.answers()[0].data() {
-            RData::A(ip) => assert_eq!(std::net::Ipv4Addr::from(*ip), "0.0.0.0".parse::<Ipv4Addr>().unwrap()),
+            RData::A(ip) => assert_eq!(
+                std::net::Ipv4Addr::from(*ip),
+                "0.0.0.0".parse::<Ipv4Addr>().unwrap()
+            ),
             other => panic!("expected A record, got {:?}", other),
         }
     }
@@ -560,12 +609,20 @@ mod tests {
     #[test]
     fn null_ip_mode_aaaa_query_returns_noerror_with_zero_ipv6() {
         let req = make_request("blocked.example.", RecordType::AAAA);
-        let resp = build_blocked_response(&req, "blocked.example.", RecordType::AAAA, &BlockingMode::NullIp);
+        let resp = build_blocked_response(
+            &req,
+            "blocked.example.",
+            RecordType::AAAA,
+            &BlockingMode::NullIp,
+        );
 
         assert_eq!(resp.header().response_code(), ResponseCode::NoError);
         assert_eq!(resp.answers().len(), 1);
         match resp.answers()[0].data() {
-            RData::AAAA(ip) => assert_eq!(std::net::Ipv6Addr::from(*ip), "::".parse::<Ipv6Addr>().unwrap()),
+            RData::AAAA(ip) => assert_eq!(
+                std::net::Ipv6Addr::from(*ip),
+                "::".parse::<Ipv6Addr>().unwrap()
+            ),
             other => panic!("expected AAAA record, got {:?}", other),
         }
     }
@@ -584,7 +641,10 @@ mod tests {
         assert_eq!(resp.header().response_code(), ResponseCode::NoError);
         assert_eq!(resp.answers().len(), 1);
         match resp.answers()[0].data() {
-            RData::A(ip) => assert_eq!(std::net::Ipv4Addr::from(*ip), "192.168.1.1".parse::<Ipv4Addr>().unwrap()),
+            RData::A(ip) => assert_eq!(
+                std::net::Ipv4Addr::from(*ip),
+                "192.168.1.1".parse::<Ipv4Addr>().unwrap()
+            ),
             other => panic!("expected A record, got {:?}", other),
         }
         assert_eq!(resp.answers()[0].ttl(), 300);
@@ -602,7 +662,10 @@ mod tests {
         assert_eq!(resp.header().response_code(), ResponseCode::NoError);
         assert_eq!(resp.answers().len(), 1);
         match resp.answers()[0].data() {
-            RData::AAAA(ip) => assert_eq!(std::net::Ipv6Addr::from(*ip), "fd00::1".parse::<Ipv6Addr>().unwrap()),
+            RData::AAAA(ip) => assert_eq!(
+                std::net::Ipv6Addr::from(*ip),
+                "fd00::1".parse::<Ipv6Addr>().unwrap()
+            ),
             other => panic!("expected AAAA record, got {:?}", other),
         }
         assert_eq!(resp.answers()[0].ttl(), 300);
@@ -640,10 +703,28 @@ mod tests {
             let req = make_request("test.example.", RecordType::A);
             let resp = build_blocked_response(&req, "test.example.", RecordType::A, mode);
 
-            assert_eq!(resp.header().id(), 0x1234, "mode={} should echo request ID", mode);
-            assert_eq!(resp.header().message_type(), MessageType::Response, "mode={}", mode);
-            assert!(resp.header().authoritative(), "mode={} should be authoritative", mode);
-            assert!(resp.header().recursion_available(), "mode={} should set RA", mode);
+            assert_eq!(
+                resp.header().id(),
+                0x1234,
+                "mode={} should echo request ID",
+                mode
+            );
+            assert_eq!(
+                resp.header().message_type(),
+                MessageType::Response,
+                "mode={}",
+                mode
+            );
+            assert!(
+                resp.header().authoritative(),
+                "mode={} should be authoritative",
+                mode
+            );
+            assert!(
+                resp.header().recursion_available(),
+                "mode={} should set RA",
+                mode
+            );
             assert_eq!(resp.queries().len(), 1, "mode={} should echo query", mode);
         }
     }

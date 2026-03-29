@@ -371,10 +371,7 @@ fn extract_min_ttl(msg: &hickory_proto::op::Message) -> u32 {
 }
 
 /// Rewrite all TTL values in a cached DNS response to reflect remaining cache time.
-fn rewrite_response_ttls(
-    response_bytes: &[u8],
-    remaining: Duration,
-) -> anyhow::Result<Vec<u8>> {
+fn rewrite_response_ttls(response_bytes: &[u8], remaining: Duration) -> anyhow::Result<Vec<u8>> {
     use hickory_proto::op::Message;
     use hickory_proto::serialize::binary::BinDecodable;
 
@@ -404,7 +401,10 @@ fn rewrite_response_ttls(
 
 /// Build a normalized cache key from domain and query type.
 fn make_cache_key(domain: &str, query_type: u16) -> (String, u16) {
-    let normalized = domain.to_ascii_lowercase().trim_end_matches('.').to_string();
+    let normalized = domain
+        .to_ascii_lowercase()
+        .trim_end_matches('.')
+        .to_string();
     (normalized, query_type)
 }
 
@@ -720,8 +720,9 @@ impl UpstreamForwarder {
                         }
                     }
                 }
-                return Err(last_err
-                    .unwrap_or_else(|| anyhow::anyhow!("All upstream DNS servers failed")));
+                return Err(
+                    last_err.unwrap_or_else(|| anyhow::anyhow!("All upstream DNS servers failed"))
+                );
             }
         };
 
@@ -731,8 +732,7 @@ impl UpstreamForwarder {
             if let Ok(resp_msg) = hickory_proto::op::Message::from_bytes(response_bytes) {
                 if let Ok(orig) = hickory_proto::op::Message::from_bytes(packet) {
                     if let Some(q) = orig.queries().first() {
-                        let key =
-                            make_cache_key(&q.name().to_ascii(), q.query_type().into());
+                        let key = make_cache_key(&q.name().to_ascii(), q.query_type().into());
                         let ttl = extract_min_ttl(&resp_msg);
                         self.cache.insert(
                             key,
@@ -830,13 +830,9 @@ impl UpstreamForwarder {
                                     _ => None,
                                 })
                                 .collect();
-                            let cached_servers =
-                                extract_glue_records(&cached_resp, &ns_names);
+                            let cached_servers = extract_glue_records(&cached_resp, &ns_names);
                             if !cached_servers.is_empty() {
-                                debug!(
-                                    "Iterative: starting from cached referral for {}",
-                                    zone
-                                );
+                                debug!("Iterative: starting from cached referral for {}", zone);
                                 current_servers = cached_servers;
                                 known_zone_depth = labels.len() - start;
                                 break;
@@ -1226,11 +1222,8 @@ impl UpstreamForwarder {
 
     /// Plain TCP forwarding (for TC=1 retry). Uses 2-byte length prefix per RFC 1035 4.2.2.
     async fn forward_tcp(&self, packet: &[u8], addr: SocketAddr) -> anyhow::Result<Vec<u8>> {
-        let tcp = tokio::time::timeout(
-            self.timeout,
-            tokio::net::TcpStream::connect(addr),
-        )
-        .await??;
+        let tcp =
+            tokio::time::timeout(self.timeout, tokio::net::TcpStream::connect(addr)).await??;
 
         let mut stream = tcp;
         let len = (packet.len() as u16).to_be_bytes();
@@ -1733,8 +1726,8 @@ mod cache_tests {
     #[test]
     fn glue_extraction_includes_aaaa() {
         use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
-        use hickory_proto::rr::{Name, RData, Record};
         use hickory_proto::rr::rdata;
+        use hickory_proto::rr::{Name, RData, Record};
 
         let mut msg = Message::new();
         let mut header = Header::new();
