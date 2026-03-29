@@ -386,9 +386,7 @@ pub async fn perform_robust_update(
         let mut s = update_status.write().await;
         if s.state != UpdateState::Failed {
             s.state = UpdateState::Failed;
-            s.message = Some(
-                "New process failed to become ready within 60 seconds".to_string(),
-            );
+            s.message = Some("New process failed to become ready within 60 seconds".to_string());
         }
     }
 }
