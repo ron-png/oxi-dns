@@ -244,10 +244,27 @@ async fn main() -> anyhow::Result<()> {
         config.blocking.update_interval_minutes,
     ));
 
+    // Construct web_state early so background tasks can clone from it
+    let web_state = web::AppState {
+        blocklist: blocklist_manager,
+        stats,
+        features: feature_manager,
+        upstream: upstream_for_web,
+        auto_update: std::sync::Arc::new(tokio::sync::RwLock::new(config.system.auto_update)),
+        update_checker,
+        update_status: std::sync::Arc::new(tokio::sync::RwLock::new(crate::update::UpdateStatus::default())),
+        blocklist_update_interval,
+        blocking_mode,
+        config_path: config_path.clone(),
+        query_log,
+        log_retention_days,
+        anonymize_ip,
+    };
+
     // Spawn background blocklist refresh task
     {
-        let bm = blocklist_manager.clone();
-        let interval_lock = blocklist_update_interval.clone();
+        let bm = web_state.blocklist.clone();
+        let interval_lock = web_state.blocklist_update_interval.clone();
         tokio::spawn(async move {
             loop {
                 let minutes = *interval_lock.read().await;
@@ -264,8 +281,8 @@ async fn main() -> anyhow::Result<()> {
 
     // Spawn background log retention cleanup task (runs hourly)
     {
-        let ql = query_log.clone();
-        let retention = log_retention_days.clone();
+        let ql = web_state.query_log.clone();
+        let retention = web_state.log_retention_days.clone();
         tokio::spawn(async move {
             loop {
                 tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
@@ -277,28 +294,252 @@ async fn main() -> anyhow::Result<()> {
         });
     }
 
+    // Spawn background auto-update task
+    {
+        let auto_update_flag = web_state.auto_update.clone();
+        let update_checker = web_state.update_checker.clone();
+        let update_status = web_state.update_status.clone();
+        let current_exe = std::env::current_exe().ok();
+        let config_path_for_update = config_path.clone();
+
+        tokio::spawn(async move {
+            loop {
+                tokio::time::sleep(crate::update::CHECK_INTERVAL).await;
+
+                if !*auto_update_flag.read().await {
+                    continue;
+                }
+
+                info!("Auto-update: checking for updates...");
+                {
+                    let mut s = update_status.write().await;
+                    s.state = crate::update::UpdateState::Checking;
+                    s.last_attempt = Some(std::time::Instant::now());
+                }
+
+                // Check for update
+                let info = update_checker.check(true).await;
+                if !info.update_available {
+                    let mut s = update_status.write().await;
+                    s.state = crate::update::UpdateState::Idle;
+                    continue;
+                }
+
+                let latest_version = match info.latest_version {
+                    Some(v) => v,
+                    None => {
+                        let mut s = update_status.write().await;
+                        s.state = crate::update::UpdateState::Idle;
+                        continue;
+                    }
+                };
+
+                info!("Auto-update: v{} available, downloading...", latest_version);
+                {
+                    let mut s = update_status.write().await;
+                    s.state = crate::update::UpdateState::Downloading;
+                }
+
+                // Download to temp path
+                let (tmp_path, version) = match update_checker.download_update().await {
+                    Ok(r) => r,
+                    Err(e) => {
+                        tracing::warn!("Auto-update: download failed: {}", e);
+                        let mut s = update_status.write().await;
+                        s.state = crate::update::UpdateState::Failed;
+                        s.message = Some(format!("Download failed: {}", e));
+                        continue;
+                    }
+                };
+
+                // Health check
+                info!("Auto-update: running health check on v{}...", version);
+                {
+                    let mut s = update_status.write().await;
+                    s.state = crate::update::UpdateState::HealthChecking;
+                }
+
+                let health_result = tokio::time::timeout(
+                    std::time::Duration::from_secs(30),
+                    tokio::process::Command::new(&tmp_path)
+                        .arg("--health-check")
+                        .arg(config_path_for_update.to_str().unwrap_or("config.toml"))
+                        .stdout(std::process::Stdio::piped())
+                        .stderr(std::process::Stdio::piped())
+                        .output(),
+                )
+                .await;
+
+                let health_output = match health_result {
+                    Ok(Ok(output)) => output,
+                    Ok(Err(e)) => {
+                        tracing::warn!("Auto-update: health check failed to run: {}", e);
+                        let mut s = update_status.write().await;
+                        s.state = crate::update::UpdateState::Failed;
+                        s.message = Some(format!("Health check failed to run: {}", e));
+                        s.logs = Some(e.to_string());
+                        continue;
+                    }
+                    Err(_) => {
+                        tracing::warn!("Auto-update: health check timed out (30s)");
+                        let mut s = update_status.write().await;
+                        s.state = crate::update::UpdateState::Failed;
+                        s.message =
+                            Some("Health check timed out after 30 seconds".to_string());
+                        continue;
+                    }
+                };
+
+                let health_logs = format!(
+                    "stdout:\n{}\nstderr:\n{}",
+                    String::from_utf8_lossy(&health_output.stdout),
+                    String::from_utf8_lossy(&health_output.stderr)
+                );
+
+                if !health_output.status.success() {
+                    tracing::warn!(
+                        "Auto-update: health check failed (exit code {:?})",
+                        health_output.status.code()
+                    );
+                    let mut s = update_status.write().await;
+                    s.state = crate::update::UpdateState::Failed;
+                    s.message = Some(format!(
+                        "Health check failed with exit code {}",
+                        health_output.status.code().unwrap_or(-1)
+                    ));
+                    s.logs = Some(health_logs);
+                    continue;
+                }
+
+                info!("Auto-update: health check passed, replacing binary...");
+
+                // Replace current binary
+                let current_exe_path = match &current_exe {
+                    Some(p) => p.clone(),
+                    None => {
+                        let mut s = update_status.write().await;
+                        s.state = crate::update::UpdateState::Failed;
+                        s.message =
+                            Some("Cannot determine current binary path".to_string());
+                        continue;
+                    }
+                };
+
+                let binary_bytes = match std::fs::read(&tmp_path) {
+                    Ok(b) => b,
+                    Err(e) => {
+                        let mut s = update_status.write().await;
+                        s.state = crate::update::UpdateState::Failed;
+                        s.message = Some(format!("Failed to read temp binary: {}", e));
+                        continue;
+                    }
+                };
+
+                if let Err(e) =
+                    crate::update::try_replace_binary(&current_exe_path, &binary_bytes)
+                {
+                    let mut s = update_status.write().await;
+                    s.state = crate::update::UpdateState::Failed;
+                    s.message = Some(format!("Failed to replace binary: {}", e));
+                    continue;
+                }
+
+                // Start new binary with --takeover
+                info!("Auto-update: starting v{} with --takeover...", version);
+                {
+                    let mut s = update_status.write().await;
+                    s.state = crate::update::UpdateState::Restarting;
+                }
+
+                let ready_path = std::path::PathBuf::from("/tmp/oxi-hole.ready");
+                let _ = std::fs::remove_file(&ready_path);
+
+                let child = tokio::process::Command::new(&current_exe_path)
+                    .arg("--takeover")
+                    .arg("--ready-file")
+                    .arg(ready_path.to_str().unwrap())
+                    .arg(config_path_for_update.to_str().unwrap_or("config.toml"))
+                    .spawn();
+
+                let mut child = match child {
+                    Ok(c) => c,
+                    Err(e) => {
+                        tracing::warn!(
+                            "Auto-update: failed to start new process: {}",
+                            e
+                        );
+                        let mut s = update_status.write().await;
+                        s.state = crate::update::UpdateState::Failed;
+                        s.message =
+                            Some(format!("Failed to start new process: {}", e));
+                        continue;
+                    }
+                };
+
+                // Wait for ready file (poll every 500ms, up to 60s)
+                let mut ready = false;
+                for _ in 0..120 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+                    match child.try_wait() {
+                        Ok(Some(status)) => {
+                            tracing::warn!(
+                                "Auto-update: new process exited early with {:?}",
+                                status
+                            );
+                            let mut s = update_status.write().await;
+                            s.state = crate::update::UpdateState::Failed;
+                            s.message =
+                                Some(format!("New process exited with {:?}", status));
+                            break;
+                        }
+                        Ok(None) => {}
+                        Err(e) => {
+                            tracing::warn!(
+                                "Auto-update: failed to check child: {}",
+                                e
+                            );
+                            break;
+                        }
+                    }
+
+                    if ready_path.exists() {
+                        ready = true;
+                        break;
+                    }
+                }
+
+                if ready {
+                    tracing::warn!(
+                        "Auto-update: v{} is ready, handing off — goodbye!",
+                        version
+                    );
+                    let _ = std::fs::remove_file(&ready_path);
+                    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+                    std::process::exit(0);
+                } else {
+                    tracing::warn!(
+                        "Auto-update: new process failed to become ready within 60s"
+                    );
+                    let _ = child.kill().await;
+                    let mut s = update_status.write().await;
+                    if s.state != crate::update::UpdateState::Failed {
+                        s.state = crate::update::UpdateState::Failed;
+                        s.message = Some(
+                            "New process failed to become ready within 60 seconds"
+                                .to_string(),
+                        );
+                    }
+                }
+            }
+        });
+    }
+
     // Restore enabled features from config
     for feature_id in &config.blocking.enabled_features {
         info!("Restoring feature: {}", feature_id);
-        feature_manager.set_feature(feature_id, true).await;
+        web_state.features.set_feature(feature_id, true).await;
     }
-
-    // Start web server
-    let web_state = web::AppState {
-        blocklist: blocklist_manager,
-        stats,
-        features: feature_manager,
-        upstream: upstream_for_web,
-        auto_update: std::sync::Arc::new(tokio::sync::RwLock::new(config.system.auto_update)),
-        update_checker,
-        update_status: std::sync::Arc::new(tokio::sync::RwLock::new(crate::update::UpdateStatus::default())),
-        blocklist_update_interval,
-        blocking_mode,
-        config_path: config_path.clone(),
-        query_log,
-        log_retention_days,
-        anonymize_ip,
-    };
 
     let web_listen = config.web.listen.clone();
     let web_handle = tokio::spawn(async move {
