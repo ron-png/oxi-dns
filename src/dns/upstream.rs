@@ -1130,3 +1130,22 @@ fn random_query_id() -> u16 {
         .map(|d| d.subsec_nanos() as u16)
         .unwrap_or(1234)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Integration test: resolve a well-known hostname via root servers.
+    /// This verifies the full iterative resolution path works without
+    /// any system DNS dependency.
+    #[tokio::test]
+    async fn test_resolve_via_root_servers() {
+        // dns.google is a stable hostname that should always resolve
+        let addrs = resolve_via_root_servers("dns.google", 853).await.unwrap();
+        assert!(!addrs.is_empty(), "Should resolve to at least one address");
+        // All returned addresses should have the requested port
+        for addr in &addrs {
+            assert_eq!(addr.port(), 853);
+        }
+    }
+}
