@@ -341,7 +341,6 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
 struct CacheEntry {
     response_bytes: Vec<u8>,
     expires_at: Instant,
-    inserted_at: Instant,
 }
 
 impl CacheEntry {
@@ -691,7 +690,7 @@ impl UpstreamForwarder {
                                     hickory_proto::op::Message::from_bytes(&response)
                                 {
                                     if let Ok(orig) =
-                                        hickory_proto::op::Message::from_bytes(&packet)
+                                        hickory_proto::op::Message::from_bytes(packet)
                                     {
                                         if let Some(q) = orig.queries().first() {
                                             let key = make_cache_key(
@@ -705,7 +704,6 @@ impl UpstreamForwarder {
                                                     response_bytes: response.clone(),
                                                     expires_at: Instant::now()
                                                         + Duration::from_secs(ttl as u64),
-                                                    inserted_at: Instant::now(),
                                                 },
                                             );
                                         }
@@ -739,7 +737,6 @@ impl UpstreamForwarder {
                             CacheEntry {
                                 response_bytes: response_bytes.clone(),
                                 expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                                inserted_at: Instant::now(),
                             },
                         );
                     }
@@ -930,7 +927,6 @@ impl UpstreamForwarder {
                             CacheEntry {
                                 response_bytes: resp_bytes.clone(),
                                 expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                                inserted_at: Instant::now(),
                             },
                         );
                     }
@@ -1090,7 +1086,6 @@ impl UpstreamForwarder {
                             CacheEntry {
                                 response_bytes: _resp_bytes.clone(),
                                 expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                                inserted_at: Instant::now(),
                             },
                         );
                     }
@@ -1534,7 +1529,6 @@ mod cache_tests {
         let entry = CacheEntry {
             response_bytes: vec![0u8; 10],
             expires_at: Instant::now() - Duration::from_secs(1),
-            inserted_at: Instant::now() - Duration::from_secs(61),
         };
         assert!(entry.is_expired());
     }
@@ -1544,7 +1538,6 @@ mod cache_tests {
         let entry = CacheEntry {
             response_bytes: vec![0u8; 10],
             expires_at: Instant::now() + Duration::from_secs(60),
-            inserted_at: Instant::now(),
         };
         assert!(!entry.is_expired());
     }
@@ -1782,8 +1775,7 @@ mod cache_tests {
             CacheEntry {
                 response_bytes: response_bytes.clone(),
                 expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                inserted_at: Instant::now(),
-            },
+                },
         );
 
         // Lookup
