@@ -177,7 +177,7 @@
         /* ---- Stats Grid ---- */
         .stats-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
             gap: 16px;
             margin-bottom: 32px;
         }
@@ -931,6 +931,13 @@
             <div class="stat-card">
                 <div class="label">Domains on Blocklist</div>
                 <div class="value size" id="blocklistSize">0</div>
+            </div>
+            <div class="stat-card">
+                <div class="label">Cache Size</div>
+                <div class="value size" id="cacheSize">0</div>
+                <div class="label" style="margin-top:10px;">Hit Rate</div>
+                <div class="value pct" id="cacheHitRate">0.0%</div>
+                <button class="btn btn-danger btn-sm" style="margin-top:12px;" onclick="flushCache()">Flush Cache</button>
             </div>
         </div>
 
@@ -2051,8 +2058,28 @@
             } catch (e) { console.error('Failed to save log settings', e); }
         }
 
+        // ---- Cache Stats ----
+        async function refreshCacheStats() {
+            try {
+                const res = await fetch('/api/cache/stats');
+                const s = await res.json();
+                document.getElementById('cacheSize').textContent = s.size.toLocaleString();
+                const hitRate = (s.hits + s.misses) > 0
+                    ? (s.hits / (s.hits + s.misses) * 100).toFixed(1)
+                    : '0.0';
+                document.getElementById('cacheHitRate').textContent = hitRate + '%';
+            } catch (e) { console.error('Failed to load cache stats', e); }
+        }
+
+        async function flushCache() {
+            try {
+                await fetch('/api/cache/flush', { method: 'POST' });
+                await refreshCacheStats();
+            } catch (e) { console.error('Failed to flush cache', e); }
+        }
+
         // ---- Auto-refresh ----
-        setInterval(() => { refreshStats(); refreshQueries(); }, 2000);
+        setInterval(() => { refreshStats(); refreshQueries(); refreshCacheStats(); }, 2000);
         refreshStats();
         pollUpdateStatus();
         setInterval(pollUpdateStatus, 5000);
@@ -2060,6 +2087,7 @@
         refreshFeatures();
         refreshCustomBlocked();
         refreshAllowlist();
+        refreshCacheStats();
     </script>
 </body>
 
