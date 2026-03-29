@@ -151,7 +151,7 @@ impl UpdateChecker {
         let binary_bytes = extract_binary_from_tar_gz(&bytes)
             .map_err(|e| format!("Failed to extract update archive: {}", e))?;
 
-        let tmp_path = std::path::PathBuf::from("/tmp/oxi-hole-update");
+        let tmp_path = std::env::temp_dir().join("oxi-hole-update");
         std::fs::write(&tmp_path, &binary_bytes)
             .map_err(|e| format!("Failed to write to temp location: {}", e))?;
 
@@ -329,7 +329,7 @@ pub async fn perform_robust_update(
         s.state = UpdateState::Restarting;
     }
 
-    let ready_path = std::path::PathBuf::from("/tmp/oxi-hole.ready");
+    let ready_path = std::env::temp_dir().join("oxi-hole.ready");
     let _ = std::fs::remove_file(&ready_path);
 
     let mut child = match tokio::process::Command::new(current_exe)
