@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::path::Path;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -127,70 +128,6 @@ impl UpdateChecker {
         info
     }
 
-    /// Download the new binary and replace the current one, then restart.
-    pub async fn perform_update(&self) -> Result<String, String> {
-        let info = self.check(false).await;
-        let download_url = info
-            .download_url
-            .ok_or("No download URL available for this platform")?;
-        let latest = info.latest_version.ok_or("Latest version unknown")?;
-
-        info!("Downloading update v{} from {}", latest, download_url);
-
-        // The release assets are .tar.gz archives containing the binary
-        let bytes = reqwest::get(&download_url)
-            .await
-            .map_err(|e| format!("Download failed: {}", e))?
-            .error_for_status()
-            .map_err(|e| format!("Download failed: {}", e))?
-            .bytes()
-            .await
-            .map_err(|e| format!("Failed to read download: {}", e))?;
-
-        // Extract binary from tar.gz archive
-        let binary_bytes = extract_binary_from_tar_gz(&bytes)
-            .map_err(|e| format!("Failed to extract update archive: {}", e))?;
-
-        let current_exe =
-            std::env::current_exe().map_err(|e| format!("Cannot find current binary: {}", e))?;
-
-        // Try direct replacement first
-        if let Err(direct_err) = try_replace_binary(&current_exe, &binary_bytes) {
-            // Direct write failed — try writing to /tmp and replacing via rename
-            let tmp_path = std::path::PathBuf::from("/tmp/oxi-hole.update");
-            std::fs::write(&tmp_path, &binary_bytes)
-                .map_err(|e| format!("Failed to write to temp location: {}", e))?;
-
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755))
-                    .map_err(|e| format!("Failed to set permissions: {}", e))?;
-            }
-
-            // Try rename (only works on same filesystem)
-            if std::fs::rename(&tmp_path, &current_exe).is_err() {
-                // Different filesystem or read-only — leave in /tmp for manual install
-                return Err(format!(
-                    "Cannot write to {} ({}). New v{} binary saved to {}. \
-                     Install manually: sudo cp {} {}",
-                    current_exe.display(),
-                    direct_err,
-                    latest,
-                    tmp_path.display(),
-                    tmp_path.display(),
-                    current_exe.display()
-                ));
-            }
-        }
-
-        info!(
-            "Update to v{} complete. Restart the service to apply.",
-            latest
-        );
-        Ok(format!("Updated to v{}. Restart to apply.", latest))
-    }
-
     /// Download the new binary to a temp path without replacing the current binary.
     /// Returns (temp_path, version_string) on success.
     pub async fn download_update(&self) -> Result<(std::path::PathBuf, String), String> {
@@ -226,6 +163,233 @@ impl UpdateChecker {
         }
 
         Ok((tmp_path, latest))
+    }
+}
+
+/// Perform a robust update: download → health check → replace → zero-downtime takeover.
+/// Updates `update_status` at each stage. On success, calls `std::process::exit(0)` to
+/// hand off to the new process. On failure, sets status to Failed and returns.
+pub async fn perform_robust_update(
+    update_checker: &UpdateChecker,
+    update_status: &Arc<RwLock<UpdateStatus>>,
+    config_path: &Path,
+    current_exe: &Path,
+) {
+    // === Check ===
+    info!("Update: checking for updates...");
+    {
+        let mut s = update_status.write().await;
+        s.state = UpdateState::Checking;
+        s.message = None;
+        s.logs = None;
+        s.last_attempt = Some(std::time::Instant::now());
+    }
+
+    let info = update_checker.check(true).await;
+    if !info.update_available {
+        let mut s = update_status.write().await;
+        s.state = UpdateState::Idle;
+        s.message = Some("No update available".to_string());
+        return;
+    }
+
+    let latest_version = match info.latest_version {
+        Some(v) => v,
+        None => {
+            let mut s = update_status.write().await;
+            s.state = UpdateState::Idle;
+            return;
+        }
+    };
+
+    // === Download ===
+    info!("Update: v{} available, downloading...", latest_version);
+    {
+        let mut s = update_status.write().await;
+        s.state = UpdateState::Downloading;
+    }
+
+    let (tmp_path, version) = match update_checker.download_update().await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("Update: download failed: {}", e);
+            let mut s = update_status.write().await;
+            s.state = UpdateState::Failed;
+            s.message = Some(format!("Download failed: {}", e));
+            return;
+        }
+    };
+
+    // === Health check ===
+    info!("Update: running health check on v{}...", version);
+    {
+        let mut s = update_status.write().await;
+        s.state = UpdateState::HealthChecking;
+    }
+
+    let mut health_child = match tokio::process::Command::new(&tmp_path)
+        .arg("--health-check")
+        .arg(config_path.to_str().unwrap_or("config.toml"))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(child) => child,
+        Err(e) => {
+            warn!("Update: health check failed to run: {}", e);
+            let mut s = update_status.write().await;
+            s.state = UpdateState::Failed;
+            s.message = Some(format!("Health check failed to run: {}", e));
+            s.logs = Some(e.to_string());
+            return;
+        }
+    };
+
+    let health_output = tokio::select! {
+        result = health_child.wait() => {
+            match result {
+                Ok(exit_status) => {
+                    let mut stdout = Vec::new();
+                    let mut stderr = Vec::new();
+                    if let Some(mut out) = health_child.stdout.take() {
+                        let _ = tokio::io::AsyncReadExt::read_to_end(&mut out, &mut stdout).await;
+                    }
+                    if let Some(mut err) = health_child.stderr.take() {
+                        let _ = tokio::io::AsyncReadExt::read_to_end(&mut err, &mut stderr).await;
+                    }
+                    std::process::Output { status: exit_status, stdout, stderr }
+                }
+                Err(e) => {
+                    warn!("Update: health check failed: {}", e);
+                    let mut s = update_status.write().await;
+                    s.state = UpdateState::Failed;
+                    s.message = Some(format!("Health check failed: {}", e));
+                    s.logs = Some(e.to_string());
+                    return;
+                }
+            }
+        }
+        _ = tokio::time::sleep(std::time::Duration::from_secs(30)) => {
+            warn!("Update: health check timed out (30s), killing child process");
+            let _ = health_child.kill().await;
+            let mut s = update_status.write().await;
+            s.state = UpdateState::Failed;
+            s.message = Some("Health check timed out after 30 seconds".to_string());
+            return;
+        }
+    };
+
+    let health_logs = format!(
+        "stdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&health_output.stdout),
+        String::from_utf8_lossy(&health_output.stderr)
+    );
+
+    if !health_output.status.success() {
+        warn!(
+            "Update: health check failed (exit code {:?})",
+            health_output.status.code()
+        );
+        let mut s = update_status.write().await;
+        s.state = UpdateState::Failed;
+        s.message = Some(format!(
+            "Health check failed with exit code {}",
+            health_output.status.code().unwrap_or(-1)
+        ));
+        s.logs = Some(health_logs);
+        return;
+    }
+
+    // === Replace binary ===
+    info!("Update: health check passed, replacing binary...");
+
+    let binary_bytes = match std::fs::read(&tmp_path) {
+        Ok(b) => b,
+        Err(e) => {
+            let mut s = update_status.write().await;
+            s.state = UpdateState::Failed;
+            s.message = Some(format!("Failed to read temp binary: {}", e));
+            return;
+        }
+    };
+
+    if let Err(e) = try_replace_binary(current_exe, &binary_bytes) {
+        let mut s = update_status.write().await;
+        s.state = UpdateState::Failed;
+        s.message = Some(format!("Failed to replace binary: {}", e));
+        return;
+    }
+
+    let _ = std::fs::remove_file(&tmp_path);
+
+    // === Takeover restart ===
+    info!("Update: starting v{} with --takeover...", version);
+    {
+        let mut s = update_status.write().await;
+        s.state = UpdateState::Restarting;
+    }
+
+    let ready_path = std::path::PathBuf::from("/tmp/oxi-hole.ready");
+    let _ = std::fs::remove_file(&ready_path);
+
+    let mut child = match tokio::process::Command::new(current_exe)
+        .arg("--takeover")
+        .arg("--ready-file")
+        .arg(ready_path.to_str().unwrap())
+        .arg(config_path.to_str().unwrap_or("config.toml"))
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Update: failed to start new process: {}", e);
+            let mut s = update_status.write().await;
+            s.state = UpdateState::Failed;
+            s.message = Some(format!("Failed to start new process: {}", e));
+            return;
+        }
+    };
+
+    // Wait for ready file (poll every 500ms, up to 60s)
+    let mut ready = false;
+    for _ in 0..120 {
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                warn!("Update: new process exited early with {:?}", status);
+                let mut s = update_status.write().await;
+                s.state = UpdateState::Failed;
+                s.message = Some(format!("New process exited with {:?}", status));
+                break;
+            }
+            Ok(None) => {}
+            Err(e) => {
+                warn!("Update: failed to check child: {}", e);
+                break;
+            }
+        }
+
+        if ready_path.exists() {
+            ready = true;
+            break;
+        }
+    }
+
+    if ready {
+        warn!("Update: v{} is ready, handing off — goodbye!", version);
+        let _ = std::fs::remove_file(&ready_path);
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        std::process::exit(0);
+    } else {
+        warn!("Update: new process failed to become ready within 60s");
+        let _ = child.kill().await;
+        let mut s = update_status.write().await;
+        if s.state != UpdateState::Failed {
+            s.state = UpdateState::Failed;
+            s.message = Some(
+                "New process failed to become ready within 60 seconds".to_string(),
+            );
+        }
     }
 }
 

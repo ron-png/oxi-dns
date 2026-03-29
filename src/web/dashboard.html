@@ -1044,8 +1044,6 @@
                                 Updates</button>
                             <button class="btn btn-green btn-sm" id="doUpdateBtn" onclick="performUpdate()"
                                 style="display: none;">Update</button>
-                            <button class="btn btn-green btn-sm" id="restartBtn" onclick="performRestart()"
-                                style="display: none;">Restart Now</button>
                         </div>
                     </div>
                     <div id="updateMessage"></div>
@@ -1770,49 +1768,70 @@
             btn.disabled = true;
             btn.textContent = 'Updating...';
             msg.style.display = 'block';
-            msg.textContent = 'Downloading update...';
+            msg.textContent = 'Starting update (health-check → replace → restart)...';
             msg.style.color = 'var(--text-muted)';
             try {
                 const res = await fetch('/api/system/update', { method: 'POST' });
                 const data = await res.json();
-                msg.textContent = data.message;
-                msg.style.color = data.success ? 'var(--color-green)' : 'var(--color-red)';
-                if (data.success) {
-                    btn.style.display = 'none';
-                    document.getElementById('restartBtn').style.display = 'inline-block';
+                if (!data.success) {
+                    msg.textContent = data.message;
+                    msg.style.color = 'var(--color-red)';
+                    btn.disabled = false;
+                    return;
                 }
+                // Pipeline started — status polling will track progress.
+                // Poll until the server restarts with the new version.
+                msg.textContent = 'Update in progress — health-checking new binary...';
+                btn.style.display = 'none';
+                const startTime = Date.now();
+                const poll = setInterval(async () => {
+                    // After 120s give up polling
+                    if (Date.now() - startTime > 120000) {
+                        clearInterval(poll);
+                        msg.textContent = 'Update timed out — check server logs';
+                        msg.style.color = 'var(--color-red)';
+                        btn.style.display = 'inline-block';
+                        btn.disabled = false;
+                        return;
+                    }
+                    try {
+                        const statusRes = await fetch('/api/system/update/status', { signal: AbortSignal.timeout(2000) });
+                        const status = await statusRes.json();
+                        if (status.state === 'downloading') {
+                            msg.textContent = 'Downloading update...';
+                        } else if (status.state === 'health_checking') {
+                            msg.textContent = 'Health-checking new binary...';
+                        } else if (status.state === 'restarting') {
+                            msg.textContent = 'Restarting with new version...';
+                        } else if (status.state === 'failed') {
+                            clearInterval(poll);
+                            msg.textContent = 'Update failed: ' + (status.message || 'unknown error');
+                            msg.style.color = 'var(--color-red)';
+                            btn.style.display = 'inline-block';
+                            btn.disabled = false;
+                            return;
+                        }
+                    } catch (e) {
+                        // Server may be restarting — try to reach it
+                        msg.textContent = 'Waiting for server to come back...';
+                    }
+                    // Also check if server came back with new version
+                    try {
+                        const verRes = await fetch('/api/system/version', { signal: AbortSignal.timeout(2000) });
+                        if (verRes.ok) {
+                            const verInfo = await verRes.json();
+                            if (!verInfo.update_available) {
+                                clearInterval(poll);
+                                window.location.reload();
+                            }
+                        }
+                    } catch (e) { /* still restarting */ }
+                }, 2000);
             } catch (e) {
                 msg.textContent = 'Update failed: ' + e.message;
                 msg.style.color = 'var(--color-red)';
+                btn.disabled = false;
             }
-            btn.disabled = false;
-        }
-
-        async function performRestart() {
-            const btn = document.getElementById('restartBtn');
-            const msg = document.getElementById('updateMessage');
-            btn.disabled = true;
-            btn.textContent = 'Restarting...';
-            msg.textContent = 'Restarting server...';
-            msg.style.color = 'var(--text-muted)';
-            try {
-                await fetch('/api/system/restart', { method: 'POST' });
-            } catch (e) {
-                // Expected — server shuts down mid-request
-            }
-            msg.textContent = 'Waiting for server to come back...';
-            // Poll until the server is reachable again
-            const poll = setInterval(async () => {
-                try {
-                    const res = await fetch('/api/stats', { signal: AbortSignal.timeout(2000) });
-                    if (res.ok) {
-                        clearInterval(poll);
-                        window.location.reload();
-                    }
-                } catch (e) {
-                    // Still down, keep polling
-                }
-            }, 1500);
         }
 
         // ---- Query Log (Logs tab) ----

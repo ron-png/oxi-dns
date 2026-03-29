@@ -527,16 +527,48 @@ struct UpdateResponse {
 }
 
 async fn api_perform_update(State(state): State<AppState>) -> Json<UpdateResponse> {
-    match state.update_checker.perform_update().await {
-        Ok(msg) => Json(UpdateResponse {
-            success: true,
-            message: msg,
-        }),
-        Err(msg) => Json(UpdateResponse {
-            success: false,
-            message: msg,
-        }),
+    // Check if an update is already in progress
+    {
+        let s = state.update_status.read().await;
+        if s.state != crate::update::UpdateState::Idle
+            && s.state != crate::update::UpdateState::Failed
+        {
+            return Json(UpdateResponse {
+                success: false,
+                message: "An update is already in progress".to_string(),
+            });
+        }
     }
+
+    let current_exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            return Json(UpdateResponse {
+                success: false,
+                message: format!("Cannot determine current binary: {}", e),
+            });
+        }
+    };
+
+    // Spawn the robust update pipeline as a background task.
+    // The UI polls /api/system/update/status to track progress.
+    let update_checker = state.update_checker.clone();
+    let update_status = state.update_status.clone();
+    let config_path = state.config_path.clone();
+    tokio::spawn(async move {
+        crate::update::perform_robust_update(
+            &update_checker,
+            &update_status,
+            &config_path,
+            &current_exe,
+        )
+        .await;
+    });
+
+    Json(UpdateResponse {
+        success: true,
+        message: "Update started — health-checking and restarting automatically".to_string(),
+    })
 }
 
 async fn api_restart() -> StatusCode {
