@@ -1625,7 +1625,7 @@
                 el.textContent = 'Last refreshed: never';
                 return;
             }
-            const elapsed = Date.now() - lastRefreshedTime.getTime();
+            const elapsed = Math.max(0, Date.now() - lastRefreshedTime.getTime());
             el.textContent = 'Last refreshed: ' + formatElapsed(elapsed) + ' ago';
         }
 
@@ -1697,6 +1697,9 @@
                 evtSource.close();
                 btn.disabled = false;
                 btn.textContent = '\u21BB Refresh Now';
+                const el = document.getElementById('lastRefreshedText');
+                el.textContent = 'Refresh failed — try again';
+                setTimeout(() => updateRefreshTimer(), 3000);
             };
         }
 

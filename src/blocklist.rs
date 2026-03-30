@@ -378,16 +378,12 @@ impl BlocklistManager {
     }
 
     /// Re-fetch all blocklist sources, sending progress events through the channel.
-    /// Returns false if a refresh is already in progress.
+    /// Caller must have already acquired the refresh lock via `try_start_refresh()`.
     pub async fn refresh_sources_streaming(
         &self,
         tx: tokio::sync::mpsc::Sender<RefreshEvent>,
-    ) -> bool {
+    ) {
         let sources = self.sources.read().await.clone();
-
-        if !self.try_start_refresh() {
-            return false;
-        }
 
         let total = sources.len();
         let mut new_src_map = HashMap::new();
@@ -440,9 +436,11 @@ impl BlocklistManager {
         *self.source_domains.write().await = new_src_map;
         *self.blocked.write().await = all_domains;
 
-        self.finish_refresh().await;
+        let now = Utc::now();
+        *self.last_refreshed_at.write().await = Some(now);
+        self.refreshing.store(false, std::sync::atomic::Ordering::SeqCst);
 
-        let refreshed_at = Utc::now().to_rfc3339();
+        let refreshed_at = now.to_rfc3339();
         let _ = tx.send(RefreshEvent::Done {
             total_domains,
             sources_ok,
@@ -451,7 +449,6 @@ impl BlocklistManager {
         }).await;
 
         info!("Blocklist refresh complete: {} total blocked domains", total_domains);
-        true
     }
 
     pub async fn add_custom_blocked(&self, domain: &str) {

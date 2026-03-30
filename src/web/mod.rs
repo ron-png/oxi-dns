@@ -491,7 +491,8 @@ async fn api_blocklist_last_refresh(
 async fn api_blocklist_refresh_sse(
     State(state): State<AppState>,
 ) -> Result<Sse<impl Stream<Item = Result<Event, Infallible>>>, StatusCode> {
-    if state.blocklist.is_refreshing() {
+    // Acquire the refresh lock before spawning to avoid TOCTOU race
+    if !state.blocklist.try_start_refresh() {
         return Err(StatusCode::CONFLICT);
     }
 
