@@ -202,7 +202,12 @@ pub async fn run_web_server(listen: &[String], state: AppState) -> anyhow::Resul
         let addr = addr.clone();
         info!("Web admin listening on {}", addr);
         handles.push(tokio::spawn(async move {
-            if let Err(e) = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await {
+            if let Err(e) = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<SocketAddr>(),
+            )
+            .await
+            {
                 tracing::error!("Web server error on {}: {}", addr, e);
             }
         }));
@@ -219,6 +224,7 @@ struct AuthErrorResponse {
     error: String,
 }
 
+#[allow(clippy::result_large_err)]
 fn require_permission(user: &AuthenticatedUser, perm: Permission) -> Result<(), Response> {
     if user.has_permission(perm) {
         Ok(())
@@ -259,7 +265,11 @@ async fn api_auth_login(
     Json(req): Json<LoginRequest>,
 ) -> Response {
     let ip = addr.ip().to_string();
-    match state.auth.authenticate(&req.username, &req.password, Some(&ip)).await {
+    match state
+        .auth
+        .authenticate(&req.username, &req.password, Some(&ip))
+        .await
+    {
         Ok(session_token) => {
             let cookie = format!(
                 "oxi_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800",
@@ -311,7 +321,11 @@ async fn api_auth_setup(
         Ok(_user) => {
             // Log them in immediately
             let ip = addr.ip().to_string();
-            match state.auth.authenticate(&req.username, &req.password, Some(&ip)).await {
+            match state
+                .auth
+                .authenticate(&req.username, &req.password, Some(&ip))
+                .await
+            {
                 Ok(session_token) => {
                     let cookie = format!(
                         "oxi_session={}; HttpOnly; SameSite=Strict; Path=/; Max-Age=604800",
@@ -360,7 +374,12 @@ async fn api_auth_logout(
     }
 
     let cookie = "oxi_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0";
-    (StatusCode::OK, [(SET_COOKIE, cookie)], Json(serde_json::json!({"success": true}))).into_response()
+    (
+        StatusCode::OK,
+        [(SET_COOKIE, cookie)],
+        Json(serde_json::json!({"success": true})),
+    )
+        .into_response()
 }
 
 async fn api_auth_me(
@@ -612,7 +631,12 @@ async fn api_create_token(
 
     match state
         .auth
-        .create_api_token(user.id, &req.name, &req.permissions, req.expires_at.as_deref())
+        .create_api_token(
+            user.id,
+            &req.name,
+            &req.permissions,
+            req.expires_at.as_deref(),
+        )
         .await
     {
         Ok(token) => Ok(Json(CreateTokenResponse { token })),

@@ -83,8 +83,7 @@ impl AuthDb {
         let conn = self.conn.clone();
         let count: i64 = conn
             .call(|conn| {
-                let n: i64 =
-                    conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
+                let n: i64 = conn.query_row("SELECT COUNT(*) FROM users", [], |row| row.get(0))?;
                 Ok(n)
             })
             .await?;
@@ -174,15 +173,12 @@ impl AuthDb {
     }
 
     /// Get all permissions for a user.
-    pub async fn get_user_permissions(
-        &self,
-        user_id: i64,
-    ) -> anyhow::Result<Vec<Permission>> {
+    pub async fn get_user_permissions(&self, user_id: i64) -> anyhow::Result<Vec<Permission>> {
         let conn = self.conn.clone();
         let perms = conn
             .call(move |conn| {
-                let mut stmt = conn
-                    .prepare("SELECT permission FROM user_permissions WHERE user_id = ?1")?;
+                let mut stmt =
+                    conn.prepare("SELECT permission FROM user_permissions WHERE user_id = ?1")?;
                 let rows = stmt.query_map(params![user_id], |row| row.get::<_, String>(0))?;
                 let mut perms = Vec::new();
                 for r in rows {
@@ -261,11 +257,7 @@ impl AuthDb {
     }
 
     /// Update the stored password hash for a user.
-    pub async fn update_password(
-        &self,
-        user_id: i64,
-        password_hash: String,
-    ) -> anyhow::Result<()> {
+    pub async fn update_password(&self, user_id: i64, password_hash: String) -> anyhow::Result<()> {
         let conn = self.conn.clone();
         conn.call(move |conn| {
             let now = Utc::now().to_rfc3339();
@@ -502,11 +494,7 @@ impl AuthDb {
     }
 
     /// Delete an API token by id, scoped to the owning user. Returns true if deleted.
-    pub async fn delete_api_token(
-        &self,
-        token_id: i64,
-        user_id: i64,
-    ) -> anyhow::Result<bool> {
+    pub async fn delete_api_token(&self, token_id: i64, user_id: i64) -> anyhow::Result<bool> {
         let conn = self.conn.clone();
         let count = conn
             .call(move |conn| {
@@ -548,5 +536,8 @@ fn row_to_user_with_hash(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserWithHa
         updated_at: row.get(5).unwrap_or_default(),
     };
     let password_hash: String = row.get(6)?;
-    Ok(UserWithHash { user, password_hash })
+    Ok(UserWithHash {
+        user,
+        password_hash,
+    })
 }

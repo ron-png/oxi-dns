@@ -66,7 +66,11 @@ impl AuthService {
 
         let token = generate_token();
         self.db
-            .create_session(token.clone(), user_with_hash.user.id, ip_address.map(|s| s.to_string()))
+            .create_session(
+                token.clone(),
+                user_with_hash.user.id,
+                ip_address.map(|s| s.to_string()),
+            )
             .await?;
         Ok(token)
     }
@@ -74,7 +78,11 @@ impl AuthService {
     pub async fn validate_session(&self, token: &str) -> Option<AuthenticatedUser> {
         let user_id = self.db.validate_session(token.to_string()).await.ok()??;
         let user = self.db.get_user_by_id(user_id).await.ok()??;
-        let permissions = self.db.get_user_permissions(user_id).await.unwrap_or_default();
+        let permissions = self
+            .db
+            .get_user_permissions(user_id)
+            .await
+            .unwrap_or_default();
         Some(AuthenticatedUser {
             id: user.id,
             username: user.username,
@@ -85,11 +93,7 @@ impl AuthService {
 
     pub async fn validate_api_token(&self, token: &str) -> Option<AuthenticatedUser> {
         let hash = hash_token(token);
-        let (user_id, scoped_permissions) = self
-            .db
-            .validate_api_token(hash)
-            .await
-            .ok()??;
+        let (user_id, scoped_permissions) = self.db.validate_api_token(hash).await.ok()??;
         let user = self.db.get_user_by_id(user_id).await.ok()??;
         Some(AuthenticatedUser {
             id: user.id,
@@ -137,7 +141,10 @@ impl AuthService {
     }
 
     pub async fn get_user_permissions(&self, user_id: i64) -> Vec<Permission> {
-        self.db.get_user_permissions(user_id).await.unwrap_or_default()
+        self.db
+            .get_user_permissions(user_id)
+            .await
+            .unwrap_or_default()
     }
 
     pub async fn update_user(
@@ -162,7 +169,9 @@ impl AuthService {
                     .map(|s| s.to_string())
                     .or(current_user.display_name),
                 is_active.unwrap_or(current_user.is_active),
-                permissions.map(|p| p.to_vec()).unwrap_or(current_permissions),
+                permissions
+                    .map(|p| p.to_vec())
+                    .unwrap_or(current_permissions),
             )
             .await
     }

@@ -7,12 +7,7 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 
-const PUBLIC_ROUTES: &[&str] = &[
-    "/login",
-    "/setup",
-    "/api/auth/login",
-    "/api/auth/setup",
-];
+const PUBLIC_ROUTES: &[&str] = &["/login", "/setup", "/api/auth/login", "/api/auth/setup"];
 
 pub async fn auth_middleware(
     axum::extract::State(auth): axum::extract::State<AuthService>,
@@ -80,7 +75,5 @@ fn extract_cookie(request: &Request<Body>, name: &str) -> Option<String> {
 fn extract_bearer(request: &Request<Body>) -> Option<String> {
     let header = request.headers().get(header::AUTHORIZATION)?;
     let header_str = header.to_str().ok()?;
-    header_str
-        .strip_prefix("Bearer ")
-        .map(|s| s.to_string())
+    header_str.strip_prefix("Bearer ").map(|s| s.to_string())
 }
