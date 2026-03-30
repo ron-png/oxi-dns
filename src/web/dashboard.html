@@ -2279,6 +2279,7 @@
         // ---- Auto-refresh ----
         setInterval(() => { refreshStats(); refreshQueries(); refreshCacheStats(); }, 2000);
         refreshStats();
+        loadLastRefreshed();
         pollUpdateStatus();
         setInterval(pollUpdateStatus, 5000);
         refreshQueries();

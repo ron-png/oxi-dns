@@ -254,6 +254,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .await;
 
+    // Mark initial load as a refresh so the timer starts from startup
+    if !config.blocking.blocklists.is_empty() {
+        blocklist_manager.finish_refresh().await;
+    }
+
     // Initialize update checker
     let update_checker = update::UpdateChecker::new();
 
