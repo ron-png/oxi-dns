@@ -15,13 +15,16 @@ use axum::response::{Html, IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::Json;
 use axum::Router;
+use dashmap::DashMap;
 use futures::stream::Stream;
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
-use tracing::info;
+use std::sync::Arc;
+use std::time::Instant;
+use tracing::{info, warn};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -40,6 +43,8 @@ pub struct AppState {
     pub anonymize_ip: std::sync::Arc<AtomicBool>,
     pub ipv6_enabled: std::sync::Arc<AtomicBool>,
     pub auth: AuthService,
+    #[doc(hidden)]
+    pub login_rate_limiter: LoginRateLimiter,
 }
 
 impl AppState {
@@ -82,8 +87,179 @@ impl AppState {
     }
 }
 
+// ==================== Security Headers Middleware ====================
+
+async fn security_headers_middleware(
+    request: axum::extract::Request,
+    next: axum::middleware::Next,
+) -> Response {
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::header::X_FRAME_OPTIONS,
+        "DENY".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        "nosniff".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::CONTENT_SECURITY_POLICY,
+        "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'"
+            .parse()
+            .unwrap(),
+    );
+    headers.insert(
+        axum::http::header::REFERRER_POLICY,
+        "strict-origin-when-cross-origin".parse().unwrap(),
+    );
+    headers.insert(
+        axum::http::header::HeaderName::from_static("permissions-policy"),
+        "camera=(), microphone=(), geolocation=()".parse().unwrap(),
+    );
+    response
+}
+
+// ==================== Login Rate Limiter ====================
+
+/// In-memory per-IP rate limiter for login attempts.
+#[derive(Clone)]
+pub struct LoginRateLimiter {
+    /// Map from IP -> (attempt_count, window_start)
+    attempts: Arc<DashMap<String, (u32, Instant)>>,
+}
+
+impl Default for LoginRateLimiter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl LoginRateLimiter {
+    pub fn new() -> Self {
+        Self {
+            attempts: Arc::new(DashMap::new()),
+        }
+    }
+
+    /// Returns true if the request should be allowed, false if rate limited.
+    /// Allows 5 attempts per 60-second window per IP.
+    fn check_rate_limit(&self, ip: &str) -> bool {
+        let now = Instant::now();
+        let window = std::time::Duration::from_secs(60);
+        let max_attempts: u32 = 5;
+
+        let mut entry = self.attempts.entry(ip.to_string()).or_insert((0, now));
+        let (count, window_start) = entry.value_mut();
+
+        // Reset window if expired
+        if now.duration_since(*window_start) > window {
+            *count = 0;
+            *window_start = now;
+        }
+
+        *count += 1;
+        *count <= max_attempts
+    }
+
+    /// Periodically clean up stale entries (call from a background task).
+    fn cleanup(&self) {
+        let now = Instant::now();
+        let window = std::time::Duration::from_secs(120);
+        self.attempts
+            .retain(|_, (_, window_start)| now.duration_since(*window_start) < window);
+    }
+}
+
+// ==================== Input Validation ====================
+
+/// Validate a domain name for blocklist/allowlist operations.
+fn validate_domain(domain: &str) -> Result<(), &'static str> {
+    let domain = domain.trim();
+    if domain.is_empty() {
+        return Err("Domain cannot be empty");
+    }
+    if domain.len() > 253 {
+        return Err("Domain exceeds maximum length of 253 characters");
+    }
+    // Each label must be 1-63 chars, alphanumeric or hyphen (not start/end with hyphen)
+    for label in domain.split('.') {
+        if label.is_empty() || label.len() > 63 {
+            return Err("Invalid domain label length");
+        }
+        if label.starts_with('-') || label.ends_with('-') {
+            return Err("Domain labels cannot start or end with a hyphen");
+        }
+        if !label
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+        {
+            return Err("Domain contains invalid characters");
+        }
+    }
+    Ok(())
+}
+
+/// Check if a URL points to an internal/private IP range (SSRF protection).
+fn is_ssrf_target(url: &str) -> bool {
+    // Extract host from URL
+    let host = url
+        .strip_prefix("http://")
+        .or_else(|| url.strip_prefix("https://"))
+        .and_then(|rest| rest.split('/').next())
+        .and_then(|host_port| {
+            // Handle [IPv6]:port and host:port
+            if host_port.starts_with('[') {
+                host_port.find(']').map(|i| &host_port[1..i])
+            } else {
+                Some(host_port.split(':').next().unwrap_or(host_port))
+            }
+        })
+        .unwrap_or("");
+
+    if host.is_empty() {
+        return true; // No valid host = suspicious
+    }
+
+    // Block localhost variants
+    let host_lower = host.to_lowercase();
+    if host_lower == "localhost"
+        || host_lower == "localhost."
+        || host_lower.ends_with(".localhost")
+    {
+        return true;
+    }
+
+    // Check for private/reserved IP ranges
+    if let Ok(ipv4) = host.parse::<std::net::Ipv4Addr>() {
+        return ipv4.is_loopback()          // 127.0.0.0/8
+            || ipv4.is_private()            // 10/8, 172.16/12, 192.168/16
+            || ipv4.is_link_local()         // 169.254/16
+            || ipv4.is_broadcast()          // 255.255.255.255
+            || ipv4.is_unspecified()        // 0.0.0.0
+            || ipv4.octets()[0] == 100 && (ipv4.octets()[1] & 0xC0) == 64; // 100.64/10 (CGNAT)
+    }
+
+    if let Ok(ipv6) = host.parse::<std::net::Ipv6Addr>() {
+        return ipv6.is_loopback() || ipv6.is_unspecified();
+    }
+
+    false
+}
+
 pub async fn run_web_server(listen: &[String], state: AppState) -> anyhow::Result<()> {
     let auth_for_middleware = state.auth.clone();
+
+    // Spawn background cleanup for login rate limiter
+    let cleanup_limiter = state.login_rate_limiter.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            cleanup_limiter.cleanup();
+        }
+    });
+
     let app = Router::new()
         // Auth pages (public)
         .route("/login", get(login_page))
@@ -182,6 +358,8 @@ pub async fn run_web_server(listen: &[String], state: AppState) -> anyhow::Resul
             auth_for_middleware,
             auth_middleware,
         ))
+        // Security headers on all responses
+        .layer(axum::middleware::from_fn(security_headers_middleware))
         .with_state(state);
 
     let mut handles = Vec::new();
@@ -264,6 +442,19 @@ async fn api_auth_login(
     Json(req): Json<LoginRequest>,
 ) -> Response {
     let ip = addr.ip().to_string();
+
+    // Rate limit login attempts per IP
+    if !state.login_rate_limiter.check_rate_limit(&ip) {
+        warn!("Login rate limit exceeded for IP {}", ip);
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(AuthErrorResponse {
+                error: "Too many login attempts. Please try again later.".to_string(),
+            }),
+        )
+            .into_response();
+    }
+
     match state
         .auth
         .authenticate(&req.username, &req.password, Some(&ip))
@@ -914,6 +1105,15 @@ async fn api_add_blocked(
     Json(req): Json<DomainRequest>,
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageBlocklists)?;
+    if let Err(e) = validate_domain(&req.domain) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(AuthErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+            .into_response());
+    }
     state.blocklist.add_custom_blocked(&req.domain).await;
     info!("Added {} to blocklist via web API", req.domain);
     state.save_config().await;
@@ -938,6 +1138,15 @@ async fn api_add_allowlisted(
     Json(req): Json<DomainRequest>,
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageAllowlist)?;
+    if let Err(e) = validate_domain(&req.domain) {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(AuthErrorResponse {
+                error: e.to_string(),
+            }),
+        )
+            .into_response());
+    }
     state.blocklist.add_allowlisted(&req.domain).await;
     info!("Added {} to allowlist via web API", req.domain);
     state.save_config().await;
@@ -983,6 +1192,18 @@ async fn api_add_blocklist_source(
         return Ok(Json(BlocklistAddResponse {
             success: false,
             message: "Only http:// and https:// URLs are allowed".to_string(),
+        }));
+    }
+    if req.url.len() > 2048 {
+        return Ok(Json(BlocklistAddResponse {
+            success: false,
+            message: "URL exceeds maximum length of 2048 characters".to_string(),
+        }));
+    }
+    if is_ssrf_target(&req.url) {
+        return Ok(Json(BlocklistAddResponse {
+            success: false,
+            message: "URLs pointing to internal or private addresses are not allowed".to_string(),
         }));
     }
     match state.blocklist.add_blocklist_source(&req.url).await {

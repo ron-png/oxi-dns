@@ -294,6 +294,7 @@ async fn main() -> anyhow::Result<()> {
         anonymize_ip,
         ipv6_enabled,
         auth: auth_service,
+        login_rate_limiter: web::LoginRateLimiter::new(),
     };
 
     // Spawn background blocklist refresh task
