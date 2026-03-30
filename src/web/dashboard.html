@@ -1757,7 +1757,7 @@
                 </div>
                 <div class="form-group">
                     <label>Display Name (optional)</label>
-                    <input type="text" id="newDisplayName">
+                    <input type="text" id="newDisplayName" autocomplete="off">
                 </div>
                 <div class="form-group">
                     <label>Permissions</label>
@@ -1810,7 +1810,7 @@
                     <h3>Edit User: ${escapeHtml(user.username)}</h3>
                     <div class="form-group">
                         <label>Display Name</label>
-                        <input type="text" id="editDisplayName" value="${escapeHtml(user.display_name || '')}">
+                        <input type="text" id="editDisplayName" value="${escapeHtml(user.display_name || '')}" autocomplete="off">
                     </div>
                     <div class="form-group">
                         <label>Active</label>
