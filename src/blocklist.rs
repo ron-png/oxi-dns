@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
+use chrono::Utc;
 
 /// Result of checking whether a domain is blocked.
 #[derive(Debug, Clone, PartialEq)]
@@ -29,6 +30,10 @@ pub struct BlocklistManager {
     enabled: Arc<RwLock<bool>>,
     /// Blocklist source URLs/paths
     sources: Arc<RwLock<Vec<String>>>,
+    /// Timestamp of the last completed refresh (manual or auto)
+    last_refreshed_at: Arc<RwLock<Option<chrono::DateTime<chrono::Utc>>>>,
+    /// Whether a refresh is currently in progress (concurrency guard)
+    refreshing: Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl BlocklistManager {
@@ -40,6 +45,8 @@ impl BlocklistManager {
             allowlist: Arc::new(RwLock::new(HashSet::new())),
             enabled: Arc::new(RwLock::new(enabled)),
             sources: Arc::new(RwLock::new(Vec::new())),
+            last_refreshed_at: Arc::new(RwLock::new(None)),
+            refreshing: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 
@@ -299,6 +306,13 @@ impl BlocklistManager {
         if sources.is_empty() {
             return;
         }
+
+        // Skip if another refresh is already running
+        if !self.try_start_refresh() {
+            info!("Blocklist refresh skipped — another refresh is in progress");
+            return;
+        }
+
         info!("Refreshing {} blocklist sources...", sources.len());
 
         let mut new_src_map = HashMap::new();
@@ -314,7 +328,6 @@ impl BlocklistManager {
                 }
                 Err(e) => {
                     warn!("Failed to refresh blocklist {}: {}", source, e);
-                    // Keep existing entries for this source on failure
                     let existing = self.source_domains.read().await;
                     if let Some(existing_set) = existing.get(source) {
                         all_domains.extend(existing_set.clone());
@@ -324,13 +337,15 @@ impl BlocklistManager {
             }
         }
 
-        // Add custom blocked domains
         let custom = self.custom_blocked.read().await;
         all_domains.extend(custom.clone());
 
         let total = all_domains.len();
         *self.source_domains.write().await = new_src_map;
         *self.blocked.write().await = all_domains;
+
+        self.finish_refresh().await;
+
         info!(
             "Blocklist refresh complete: {} total blocked domains",
             total
@@ -369,6 +384,32 @@ impl BlocklistManager {
 
     pub async fn get_allowlist(&self) -> Vec<String> {
         self.allowlist.read().await.iter().cloned().collect()
+    }
+
+    /// Get the timestamp of the last completed refresh.
+    pub async fn get_last_refreshed_at(&self) -> Option<chrono::DateTime<chrono::Utc>> {
+        *self.last_refreshed_at.read().await
+    }
+
+    /// Check if a refresh is currently running.
+    pub fn is_refreshing(&self) -> bool {
+        self.refreshing.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// Try to acquire the refresh lock. Returns false if already refreshing.
+    pub fn try_start_refresh(&self) -> bool {
+        self.refreshing.compare_exchange(
+            false,
+            true,
+            std::sync::atomic::Ordering::SeqCst,
+            std::sync::atomic::Ordering::SeqCst,
+        ).is_ok()
+    }
+
+    /// Release the refresh lock and set the last_refreshed_at timestamp.
+    pub async fn finish_refresh(&self) {
+        *self.last_refreshed_at.write().await = Some(Utc::now());
+        self.refreshing.store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 
