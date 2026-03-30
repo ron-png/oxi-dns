@@ -114,16 +114,15 @@ impl DnsServer {
             let ipv6 = self.ipv6_enabled.clone();
             info!("Starting plain DNS (TCP) on {}", addr);
             handles.push(tokio::spawn(async move {
-                if let Err(e) =
-                    listener_tcp::run(addr, bl, st, up, ft, bm, ql, anon, ipv6).await
-                {
+                if let Err(e) = listener_tcp::run(addr, bl, st, up, ft, bm, ql, anon, ipv6).await {
                     tracing::error!("TCP DNS listener error: {}", e);
                 }
             }));
         }
 
         // DNS-over-TLS listeners
-        if let (Some(dot_addrs), Some(tls_config)) = (&self.config.dot_listen, &self.dot_tls_config) {
+        if let (Some(dot_addrs), Some(tls_config)) = (&self.config.dot_listen, &self.dot_tls_config)
+        {
             for dot_addr in dot_addrs {
                 let addr = dot_addr.clone();
                 let bl = self.blocklist.clone();
@@ -147,7 +146,8 @@ impl DnsServer {
         }
 
         // DNS-over-HTTPS listeners
-        if let (Some(doh_addrs), Some(tls_config)) = (&self.config.doh_listen, &self.doh_tls_config) {
+        if let (Some(doh_addrs), Some(tls_config)) = (&self.config.doh_listen, &self.doh_tls_config)
+        {
             for doh_addr in doh_addrs {
                 let addr = doh_addr.clone();
                 let bl = self.blocklist.clone();

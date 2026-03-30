@@ -83,7 +83,11 @@ pub async fn process_dns_query(
 
     let question = match request.queries().first() {
         Some(q) => q,
-        None => return Err(DnsError::ParseError(anyhow::anyhow!("No question in DNS query"))),
+        None => {
+            return Err(DnsError::ParseError(anyhow::anyhow!(
+                "No question in DNS query"
+            )))
+        }
     };
 
     let domain = question.name().to_string();

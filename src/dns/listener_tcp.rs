@@ -162,8 +162,12 @@ async fn handle_tcp_connection(
             }
         };
 
-        let resp_len = u16::try_from(response.len())
-            .map_err(|_| anyhow::anyhow!("DNS response too large for TCP framing: {} bytes", response.len()))?;
+        let resp_len = u16::try_from(response.len()).map_err(|_| {
+            anyhow::anyhow!(
+                "DNS response too large for TCP framing: {} bytes",
+                response.len()
+            )
+        })?;
         // Write length prefix + body as single buffer to avoid packet fragmentation (RFC 7766 §8)
         let mut framed = Vec::with_capacity(2 + response.len());
         framed.extend_from_slice(&resp_len.to_be_bytes());

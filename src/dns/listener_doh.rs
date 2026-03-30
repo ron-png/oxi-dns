@@ -104,8 +104,8 @@ pub async fn run(
             };
 
             let io = hyper_util::rt::TokioIo::new(tls_stream);
-            let service =
-                hyper::service::service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
+            let service = hyper::service::service_fn(
+                move |mut req: hyper::Request<hyper::body::Incoming>| {
                     let app = app.clone();
                     async move {
                         // Inject peer address so handlers can extract real client IP
@@ -119,7 +119,8 @@ pub async fn run(
                         let resp = app.into_service().call(req).await;
                         resp
                     }
-                });
+                },
+            );
 
             if let Err(e) =
                 hyper_util::server::conn::auto::Builder::new(hyper_util::rt::TokioExecutor::new())
@@ -143,7 +144,11 @@ async fn doh_get(
     req: axum::extract::Request,
 ) -> impl IntoResponse {
     // RFC 8484 §4.1: validate Accept header if present
-    if let Some(accept) = req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
+    if let Some(accept) = req
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+    {
         if !accept.contains("application/dns-message") && !accept.contains("*/*") {
             return StatusCode::NOT_ACCEPTABLE.into_response();
         }
@@ -176,8 +181,12 @@ async fn doh_get(
             match e {
                 // RFC 8484 §4.2.1: DNS errors are returned as DNS messages in the HTTP body,
                 // not as HTTP error status codes.
-                handler::DnsError::ParseError(_) => build_dns_error_response(&packet, ResponseCode::FormErr),
-                handler::DnsError::ServerError(_) => build_dns_error_response(&packet, ResponseCode::ServFail),
+                handler::DnsError::ParseError(_) => {
+                    build_dns_error_response(&packet, ResponseCode::FormErr)
+                }
+                handler::DnsError::ServerError(_) => {
+                    build_dns_error_response(&packet, ResponseCode::ServFail)
+                }
             }
         }
     }
@@ -185,7 +194,11 @@ async fn doh_get(
 
 async fn doh_post(State(state): State<DohState>, req: axum::extract::Request) -> impl IntoResponse {
     // RFC 8484 §4.1: validate Accept header if present
-    if let Some(accept) = req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
+    if let Some(accept) = req
+        .headers()
+        .get(header::ACCEPT)
+        .and_then(|v| v.to_str().ok())
+    {
         if !accept.contains("application/dns-message") && !accept.contains("*/*") {
             return StatusCode::NOT_ACCEPTABLE.into_response();
         }
@@ -232,8 +245,12 @@ async fn doh_post(State(state): State<DohState>, req: axum::extract::Request) ->
             match e {
                 // RFC 8484 §4.2.1: DNS errors are returned as DNS messages in the HTTP body,
                 // not as HTTP error status codes.
-                handler::DnsError::ParseError(_) => build_dns_error_response(&body, ResponseCode::FormErr),
-                handler::DnsError::ServerError(_) => build_dns_error_response(&body, ResponseCode::ServFail),
+                handler::DnsError::ParseError(_) => {
+                    build_dns_error_response(&body, ResponseCode::FormErr)
+                }
+                handler::DnsError::ServerError(_) => {
+                    build_dns_error_response(&body, ResponseCode::ServFail)
+                }
             }
         }
     }

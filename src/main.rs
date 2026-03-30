@@ -141,17 +141,17 @@ async fn main() -> anyhow::Result<()> {
     // Build per-protocol TLS configs with correct ALPN
     let dot_tls_config = if config.dns.dot_listen.is_some() {
         // RFC 8310 / RFC 7858: advertise "dot" ALPN token
-        Some(tls::build_server_config(&config.tls, vec![b"dot".to_vec()])?)
+        Some(tls::build_server_config(
+            &config.tls,
+            vec![b"dot".to_vec()],
+        )?)
     } else {
         None
     };
 
     let doh_tls_config = if config.dns.doh_listen.is_some() {
         // RFC 8484 §5.2: DoH MUST use HTTP/2 — only advertise h2
-        Some(tls::build_server_config(
-            &config.tls,
-            vec![b"h2".to_vec()],
-        )?)
+        Some(tls::build_server_config(&config.tls, vec![b"h2".to_vec()])?)
     } else {
         None
     };

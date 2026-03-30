@@ -140,7 +140,10 @@ pub async fn run(
 
         // RFC 1035 §4.1.1: a valid DNS message needs at least a 12-byte header
         if len < MIN_DNS_MESSAGE_LEN {
-            debug!("Dropping sub-header-size UDP packet ({} bytes) from {}", len, src);
+            debug!(
+                "Dropping sub-header-size UDP packet ({} bytes) from {}",
+                len, src
+            );
             continue;
         }
 
@@ -148,7 +151,10 @@ pub async fn run(
         let permit = match semaphore.clone().try_acquire_owned() {
             Ok(p) => p,
             Err(_) => {
-                warn!("UDP task limit reached ({}), dropping packet from {}", MAX_CONCURRENT_UDP_TASKS, src);
+                warn!(
+                    "UDP task limit reached ({}), dropping packet from {}",
+                    MAX_CONCURRENT_UDP_TASKS, src
+                );
                 continue;
             }
         };

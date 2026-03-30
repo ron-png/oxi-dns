@@ -389,14 +389,13 @@ fn extract_min_ttl(msg: &hickory_proto::op::Message) -> u32 {
 
     if is_negative {
         // RFC 2308: use SOA minimum TTL from authority section
-        let soa_ttl = msg
-            .name_servers()
-            .iter()
-            .find_map(|r| match r.data() {
-                RData::SOA(soa) => Some(r.ttl().min(soa.minimum())),
-                _ => None,
-            });
-        return soa_ttl.unwrap_or(CACHE_TTL_FLOOR).clamp(CACHE_TTL_FLOOR, CACHE_TTL_CEILING);
+        let soa_ttl = msg.name_servers().iter().find_map(|r| match r.data() {
+            RData::SOA(soa) => Some(r.ttl().min(soa.minimum())),
+            _ => None,
+        });
+        return soa_ttl
+            .unwrap_or(CACHE_TTL_FLOOR)
+            .clamp(CACHE_TTL_FLOOR, CACHE_TTL_CEILING);
     }
 
     let all_records = msg
@@ -496,6 +495,7 @@ pub struct UpstreamForwarder {
     cache_misses: Arc<AtomicU64>,
     cache_enabled: Arc<AtomicBool>,
     /// DoQ connection pool keyed by (addr, hostname) per RFC 9250 §5.5.1.
+    #[allow(clippy::type_complexity)]
     doq_pool: Arc<DashMap<(SocketAddr, String), Arc<Mutex<DoqPoolEntry>>>>,
 }
 
@@ -797,15 +797,13 @@ impl UpstreamForwarder {
                 if is_cacheable_response(&resp_msg) {
                     if let Ok(orig) = hickory_proto::op::Message::from_bytes(packet) {
                         if let Some(q) = orig.queries().first() {
-                            let key =
-                                make_cache_key(&q.name().to_ascii(), q.query_type().into());
+                            let key = make_cache_key(&q.name().to_ascii(), q.query_type().into());
                             let ttl = extract_min_ttl(&resp_msg);
                             self.cache.insert(
                                 key,
                                 CacheEntry {
                                     response_bytes: response_bytes.clone(),
-                                    expires_at: Instant::now()
-                                        + Duration::from_secs(ttl as u64),
+                                    expires_at: Instant::now() + Duration::from_secs(ttl as u64),
                                 },
                             );
                         }
@@ -1491,7 +1489,10 @@ impl UpstreamForwarder {
             .and_then(|v| v.to_str().ok())
             .unwrap_or("");
         if !content_type.starts_with("application/dns-message") {
-            anyhow::bail!("DoH: unexpected Content-Type from upstream: {}", content_type);
+            anyhow::bail!(
+                "DoH: unexpected Content-Type from upstream: {}",
+                content_type
+            );
         }
 
         let body = response.bytes().await?;
@@ -1569,11 +1570,7 @@ impl UpstreamForwarder {
     }
 
     /// Create a new QUIC endpoint and connection for DoQ.
-    async fn doq_connect(
-        &self,
-        addr: SocketAddr,
-        hostname: &str,
-    ) -> anyhow::Result<DoqPoolEntry> {
+    async fn doq_connect(&self, addr: SocketAddr, hostname: &str) -> anyhow::Result<DoqPoolEntry> {
         let bind_addr: std::net::SocketAddr = if addr.is_ipv4() {
             "0.0.0.0:0".parse()?
         } else {
@@ -1603,10 +1600,16 @@ impl UpstreamForwarder {
         if let Some(entry) = self.doq_pool.get(&pool_key) {
             let guard = entry.lock().await;
             if guard.connection.close_reason().is_none() {
-                match self.doq_query_on_connection(packet, &guard.connection).await {
+                match self
+                    .doq_query_on_connection(packet, &guard.connection)
+                    .await
+                {
                     Ok(response) => return Ok(response),
                     Err(e) => {
-                        debug!("DoQ pooled connection to {}:{} failed: {}, reconnecting", addr, hostname, e);
+                        debug!(
+                            "DoQ pooled connection to {}:{} failed: {}, reconnecting",
+                            addr, hostname, e
+                        );
                         drop(guard);
                         self.doq_pool.remove(&pool_key);
                     }
@@ -1619,12 +1622,13 @@ impl UpstreamForwarder {
 
         // Create a new connection and pool it
         let entry = self.doq_connect(addr, hostname).await?;
-        let result = self.doq_query_on_connection(packet, &entry.connection).await;
+        let result = self
+            .doq_query_on_connection(packet, &entry.connection)
+            .await;
 
         match result {
             Ok(response) => {
-                self.doq_pool
-                    .insert(pool_key, Arc::new(Mutex::new(entry)));
+                self.doq_pool.insert(pool_key, Arc::new(Mutex::new(entry)));
                 Ok(response)
             }
             Err(e) => {

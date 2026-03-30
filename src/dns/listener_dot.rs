@@ -75,7 +75,10 @@ pub async fn run(
         let prev = conn_count.fetch_add(1, Ordering::AcqRel);
         if prev >= MAX_DOT_CONNECTIONS {
             conn_count.fetch_sub(1, Ordering::AcqRel);
-            warn!("DoT connection limit reached ({}), rejecting {}", MAX_DOT_CONNECTIONS, peer);
+            warn!(
+                "DoT connection limit reached ({}), rejecting {}",
+                MAX_DOT_CONNECTIONS, peer
+            );
             drop(tcp_stream);
             continue;
         }
@@ -191,8 +194,12 @@ async fn handle_dot_connection(
             }
         };
 
-        let resp_len = u16::try_from(response.len())
-            .map_err(|_| anyhow::anyhow!("DNS response too large for DoT framing: {} bytes", response.len()))?;
+        let resp_len = u16::try_from(response.len()).map_err(|_| {
+            anyhow::anyhow!(
+                "DNS response too large for DoT framing: {} bytes",
+                response.len()
+            )
+        })?;
         // Write length prefix + body as single buffer to avoid packet fragmentation
         let mut framed = Vec::with_capacity(2 + response.len());
         framed.extend_from_slice(&resp_len.to_be_bytes());
