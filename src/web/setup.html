@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup — Oxi-DNS</title>
+    <style>
+        :root {
+            --color-accent: #8a64e5;
+            --color-accent-hover: #9d7cf2;
+            --color-red: #f87171;
+            --text-primary: #e6e6e6;
+            --text-secondary: #999;
+            --text-muted: #666;
+            --bg-page: #000;
+            --bg-subtle: #111;
+            --border: #222;
+            --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        }
+
+        *, *::before, *::after {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        html {
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            font-family: var(--font-sans);
+            font-size: 15px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            background: var(--bg-page);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        ::selection {
+            background: var(--color-accent);
+            color: #fff;
+        }
+
+        .card {
+            width: 100%;
+            max-width: 380px;
+            padding: 40px 36px;
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            margin: 24px;
+        }
+
+        .logo {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: -0.5px;
+            margin-bottom: 6px;
+            text-align: center;
+        }
+
+        .logo span {
+            color: var(--color-accent);
+        }
+
+        .subtitle {
+            font-size: 13px;
+            color: var(--text-muted);
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+
+        input {
+            width: 100%;
+            background: #111;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px 14px;
+            font-size: 15px;
+            font-family: var(--font-sans);
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.15s ease;
+        }
+
+        input:focus {
+            border-color: var(--color-accent);
+        }
+
+        input::placeholder {
+            color: var(--text-muted);
+        }
+
+        button[type="submit"] {
+            width: 100%;
+            margin-top: 8px;
+            padding: 12px 14px;
+            background: var(--color-accent);
+            border: none;
+            border-radius: 8px;
+            font-size: 15px;
+            font-family: var(--font-sans);
+            font-weight: 500;
+            color: #fff;
+            cursor: pointer;
+            transition: background 0.15s ease, opacity 0.15s ease;
+        }
+
+        button[type="submit"]:hover:not(:disabled) {
+            background: var(--color-accent-hover);
+        }
+
+        button[type="submit"]:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .error-message {
+            margin-top: 16px;
+            padding: 10px 14px;
+            background: rgba(248, 113, 113, 0.08);
+            border: 1px solid rgba(248, 113, 113, 0.25);
+            border-radius: 8px;
+            font-size: 13px;
+            color: var(--color-red);
+            display: none;
+        }
+
+        .error-message.visible {
+            display: block;
+        }
+
+        .note {
+            margin-top: 16px;
+            font-size: 12px;
+            color: #444;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="logo"><span>oxi</span>-dns</div>
+        <div class="subtitle">Create your admin account to get started</div>
+
+        <form id="setup-form" novalidate>
+            <div class="form-group">
+                <label for="username">Username</label>
+                <input
+                    type="text"
+                    id="username"
+                    name="username"
+                    autocomplete="username"
+                    required
+                    placeholder="admin"
+                />
+            </div>
+            <div class="form-group">
+                <label for="password">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    autocomplete="new-password"
+                    required
+                    minlength="8"
+                    placeholder="••••••••"
+                />
+            </div>
+            <div class="form-group">
+                <label for="confirm-password">Confirm Password</label>
+                <input
+                    type="password"
+                    id="confirm-password"
+                    name="confirm-password"
+                    autocomplete="new-password"
+                    required
+                    minlength="8"
+                    placeholder="••••••••"
+                />
+            </div>
+            <button type="submit" id="submit-btn">Create Account &amp; Continue</button>
+            <div class="error-message" id="error-message"></div>
+        </form>
+
+        <p class="note">This account will have full admin permissions.</p>
+    </div>
+
+    <script>
+        const form = document.getElementById('setup-form');
+        const submitBtn = document.getElementById('submit-btn');
+        const errorMsg = document.getElementById('error-message');
+
+        function showError(msg) {
+            errorMsg.textContent = msg;
+            errorMsg.classList.add('visible');
+        }
+
+        function clearError() {
+            errorMsg.textContent = '';
+            errorMsg.classList.remove('visible');
+        }
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            clearError();
+
+            const username = document.getElementById('username').value.trim();
+            const password = document.getElementById('password').value;
+            const confirm = document.getElementById('confirm-password').value;
+
+            if (!username) {
+                showError('Please enter a username.');
+                return;
+            }
+
+            if (password.length < 8) {
+                showError('Password must be at least 8 characters.');
+                return;
+            }
+
+            if (password !== confirm) {
+                showError('Passwords do not match.');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Creating account…';
+
+            try {
+                const res = await fetch('/api/auth/setup', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password }),
+                });
+
+                if (res.ok) {
+                    window.location.href = '/';
+                } else {
+                    let msg = 'Failed to create account. Please try again.';
+                    try {
+                        const data = await res.json();
+                        if (data && data.error) msg = data.error;
+                    } catch (_) {}
+                    showError(msg);
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Create Account & Continue';
+                }
+            } catch (err) {
+                showError('Unable to reach the server. Please try again.');
+                submitBtn.disabled = false;
+                submitBtn.textContent = 'Create Account & Continue';
+            }
+        });
+    </script>
+</body>
+</html>
