@@ -195,8 +195,34 @@
             text-transform: uppercase;
             letter-spacing: 0.05em;
             margin-bottom: 6px;
-            cursor: help;
             font-weight: var(--weight-medium);
+        }
+
+        .stat-card .label[data-tooltip] {
+            cursor: help;
+            position: relative;
+            text-decoration: underline dotted var(--text-muted);
+            text-underline-offset: 3px;
+        }
+
+        .stat-card .label[data-tooltip]:hover::after {
+            content: attr(data-tooltip);
+            position: absolute;
+            left: 0;
+            top: calc(100% + 6px);
+            background: #1a1a1a;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: var(--weight-normal);
+            color: var(--text-secondary);
+            text-transform: none;
+            letter-spacing: normal;
+            white-space: normal;
+            width: 220px;
+            z-index: 50;
+            line-height: 1.4;
         }
 
         .stat-card .value {
@@ -1234,25 +1260,25 @@
         <!-- Stats (always visible) -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="label" title="Total number of DNS queries received since the server started">Total Queries</div>
+                <div class="label" data-tooltip="Total number of DNS queries received since the server started.">Total Queries</div>
                 <div class="value" id="totalQueries">0</div>
             </div>
             <div class="stat-card">
-                <div class="label" title="Number of queries that matched a blocklist and were blocked">Blocked Queries</div>
+                <div class="label" data-tooltip="Number of queries that matched a blocklist and were blocked.">Blocked Queries</div>
                 <div class="value blocked" id="blockedQueries">0</div>
             </div>
             <div class="stat-card">
-                <div class="label" title="Percentage of all queries that were blocked">Block Rate</div>
+                <div class="label" data-tooltip="Percentage of all queries that were blocked.">Block Rate</div>
                 <div class="value pct" id="blockPct">0.0%</div>
             </div>
             <div class="stat-card">
-                <div class="label" title="Total number of unique domains loaded from all active blocklists">Domains on Blocklist</div>
+                <div class="label" data-tooltip="Total number of unique domains loaded from all active blocklists.">Domains on Blocklist</div>
                 <div class="value size" id="blocklistSize">0</div>
             </div>
             <div class="stat-card">
-                <div class="label" title="Number of DNS responses currently stored in the cache to speed up repeat lookups">Cache Size</div>
+                <div class="label" data-tooltip="Number of DNS responses currently stored in the cache to speed up repeat lookups.">Cache Size</div>
                 <div class="value size" id="cacheSize">0</div>
-                <div class="label" style="margin-top:10px;" title="Percentage of queries answered from cache instead of forwarding to upstream DNS servers. Higher is better.">Hit Rate</div>
+                <div class="label" style="margin-top:10px;" data-tooltip="Percentage of queries answered from cache instead of forwarding to upstream DNS servers. Higher is better.">Hit Rate</div>
                 <div class="value pct" id="cacheHitRate">0.0%</div>
                 <button class="btn btn-danger btn-sm" style="margin-top:12px;" onclick="flushCache()">Flush
                     Cache</button>
