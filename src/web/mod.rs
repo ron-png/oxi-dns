@@ -95,10 +95,7 @@ async fn security_headers_middleware(
 ) -> Response {
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
-    headers.insert(
-        axum::http::header::X_FRAME_OPTIONS,
-        "DENY".parse().unwrap(),
-    );
+    headers.insert(axum::http::header::X_FRAME_OPTIONS, "DENY".parse().unwrap());
     headers.insert(
         axum::http::header::X_CONTENT_TYPE_OPTIONS,
         "nosniff".parse().unwrap(),
@@ -223,9 +220,7 @@ fn is_ssrf_target(url: &str) -> bool {
 
     // Block localhost variants
     let host_lower = host.to_lowercase();
-    if host_lower == "localhost"
-        || host_lower == "localhost."
-        || host_lower.ends_with(".localhost")
+    if host_lower == "localhost" || host_lower == "localhost." || host_lower.ends_with(".localhost")
     {
         return true;
     }
