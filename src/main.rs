@@ -325,27 +325,42 @@ async fn main() -> anyhow::Result<()> {
 
         tokio::spawn(async move {
             loop {
-                tokio::time::sleep(crate::update::CHECK_INTERVAL).await;
+                // Always check for updates regardless of auto_update setting
+                let version_info = update_checker.check(true).await;
 
-                if !*auto_update_flag.read().await {
-                    continue;
+                if version_info.update_available {
+                    if let Some(ref latest) = version_info.latest_version {
+                        if *auto_update_flag.read().await {
+                            let current_exe_path = match &current_exe {
+                                Some(p) => p.clone(),
+                                None => {
+                                    tracing::warn!(
+                                        "Auto-update: cannot determine current binary path"
+                                    );
+                                    tokio::time::sleep(crate::update::CHECK_INTERVAL).await;
+                                    continue;
+                                }
+                            };
+
+                            crate::update::perform_robust_update(
+                                &update_checker,
+                                &update_status,
+                                &config_path_for_update,
+                                &current_exe_path,
+                            )
+                            .await;
+                        } else {
+                            info!(
+                                "Update available: v{} (current: v{}). Enable auto-update or visit {} to update manually.",
+                                latest,
+                                version_info.current_version,
+                                version_info.release_url.as_deref().unwrap_or("GitHub"),
+                            );
+                        }
+                    }
                 }
 
-                let current_exe_path = match &current_exe {
-                    Some(p) => p.clone(),
-                    None => {
-                        tracing::warn!("Auto-update: cannot determine current binary path");
-                        continue;
-                    }
-                };
-
-                crate::update::perform_robust_update(
-                    &update_checker,
-                    &update_status,
-                    &config_path_for_update,
-                    &current_exe_path,
-                )
-                .await;
+                tokio::time::sleep(crate::update::CHECK_INTERVAL).await;
             }
         });
     }
