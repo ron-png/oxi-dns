@@ -11,6 +11,7 @@ mod query_log;
 mod stats;
 mod tls;
 mod update;
+mod auth;
 mod web;
 
 use config::Config;
