@@ -940,6 +940,248 @@
             font-size: 13px;
             color: var(--text-secondary);
         }
+
+        /* ---- User Menu ---- */
+        .user-menu {
+            position: relative;
+        }
+
+        .user-menu-btn {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            background: transparent;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            cursor: pointer;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .user-menu-btn:hover {
+            border-color: var(--color-accent);
+            color: var(--text-primary);
+        }
+
+        .user-menu-btn::after {
+            content: "\25BE";
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .user-menu-dropdown {
+            display: none;
+            position: absolute;
+            top: calc(100% + 6px);
+            right: 0;
+            min-width: 180px;
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 8px;
+            overflow: hidden;
+            z-index: 200;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+        }
+
+        .user-menu-dropdown.open {
+            display: block;
+        }
+
+        .user-menu-item {
+            display: block;
+            width: 100%;
+            padding: 8px 14px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-family: var(--font-mono);
+            font-size: 12px;
+            text-align: left;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+
+        .user-menu-item:hover {
+            background: rgba(138, 100, 229, 0.1);
+            color: var(--text-primary);
+        }
+
+        .user-menu-item.danger {
+            color: var(--color-red);
+        }
+
+        .user-menu-item.danger:hover {
+            background: rgba(248, 113, 113, 0.1);
+        }
+
+        .user-menu-divider {
+            height: 1px;
+            background: var(--border);
+            margin: 4px 0;
+        }
+
+        /* ---- Permission gating ---- */
+        .perm-hidden {
+            display: none !important;
+        }
+
+        .perm-disabled {
+            pointer-events: none;
+            opacity: 0.4;
+        }
+
+        /* ---- Modal ---- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.6);
+            z-index: 300;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal-overlay.open {
+            display: flex;
+        }
+
+        .modal {
+            background: var(--bg-subtle);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            max-width: 520px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal h3 {
+            font-size: 16px;
+            font-weight: var(--weight-medium);
+            color: var(--text-primary);
+            margin-bottom: 16px;
+        }
+
+        .modal .form-group {
+            margin-bottom: 12px;
+        }
+
+        .modal .form-group label {
+            display: block;
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 4px;
+            font-weight: var(--weight-medium);
+        }
+
+        .modal .form-group input[type="text"],
+        .modal .form-group input[type="password"],
+        .modal .form-group input[type="number"],
+        .modal .form-group input[type="date"] {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: var(--bg-page);
+            color: var(--text-primary);
+            font-family: var(--font-mono);
+            font-size: 13px;
+            outline: none;
+        }
+
+        .modal .form-group input:focus {
+            border-color: var(--color-accent);
+        }
+
+        .modal .perm-checkboxes {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .modal .perm-checkboxes label {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        .modal .perm-checkboxes input[type="checkbox"] {
+            accent-color: var(--color-accent);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+            margin-top: 16px;
+        }
+
+        .token-reveal-box {
+            background: var(--bg-page);
+            border: 1px solid var(--color-green);
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 12px;
+            font-family: var(--font-mono);
+            font-size: 13px;
+            color: var(--color-green);
+            word-break: break-all;
+        }
+
+        .token-reveal-box .copy-btn {
+            margin-top: 8px;
+            padding: 4px 12px;
+            font-size: 11px;
+            font-family: var(--font-mono);
+            background: transparent;
+            border: 1px solid var(--color-green);
+            color: var(--color-green);
+            border-radius: 999px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .token-reveal-box .copy-btn:hover {
+            background: rgba(52, 211, 153, 0.1);
+        }
+
+        .token-warning {
+            font-size: 11px;
+            color: var(--color-orange);
+            margin-top: 6px;
+        }
+
+        /* ---- Users/Tokens table ---- */
+        .perm-badges {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .perm-badge {
+            display: inline-block;
+            padding: 1px 6px;
+            border-radius: 999px;
+            font-size: 10px;
+            font-family: var(--font-mono);
+            background: rgba(138, 100, 229, 0.1);
+            color: var(--color-accent);
+        }
+
+        .user-actions, .token-actions {
+            display: flex;
+            gap: 4px;
+        }
     </style>
 </head>
 
@@ -956,6 +1198,17 @@
                 <button id="masterToggle" class="master-toggle enabled" onclick="toggleMasterBlocking()">
                     Protection: ON
                 </button>
+                <div class="user-menu" id="userMenu">
+                    <button class="user-menu-btn" id="userMenuBtn" onclick="toggleUserMenu(event)">
+                        <span id="userMenuName">...</span>
+                    </button>
+                    <div class="user-menu-dropdown" id="userMenuDropdown">
+                        <button class="user-menu-item" onclick="showTokensSection()">API Tokens</button>
+                        <button class="user-menu-item manage-users-only" onclick="showUsersSection()">Users</button>
+                        <div class="user-menu-divider"></div>
+                        <button class="user-menu-item danger" onclick="signOut()">Sign Out</button>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -1098,7 +1351,7 @@
                             versions are health-checked before being applied. If a health check fails, the
                             current version continues running and a notification is shown.</p>
                     </div>
-                    <label class="toggle-switch" id="toggle-autoupdate">
+                    <label class="toggle-switch manage-system-only" id="toggle-autoupdate">
                         <input type="checkbox" id="autoUpdateCheckbox" onchange="toggleAutoUpdate(this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
@@ -1109,7 +1362,7 @@
                         <p>Include IPv6 records in DNS responses. Disable on IPv4-only networks to prevent
                             clients from attempting unreachable IPv6 connections.</p>
                     </div>
-                    <label class="toggle-switch" id="toggle-ipv6">
+                    <label class="toggle-switch manage-system-only" id="toggle-ipv6">
                         <input type="checkbox" id="ipv6Checkbox" onchange="toggleIpv6(this.checked)">
                         <span class="toggle-slider"></span>
                     </label>
@@ -1190,7 +1443,7 @@
 
             <div class="section">
                 <h2>Block Domain</h2>
-                <div class="add-domain">
+                <div class="add-domain manage-blocklists-only">
                     <input type="text" id="domainInput" placeholder="e.g. ads.example.com" />
                     <button class="btn btn-accent" onclick="addBlocked()">Block</button>
                 </div>
@@ -1199,7 +1452,7 @@
 
             <div class="section">
                 <h2>Allow Domain</h2>
-                <div class="add-domain">
+                <div class="add-domain manage-allowlist-only">
                     <input type="text" id="allowInput" placeholder="e.g. safe.example.com" />
                     <button class="btn btn-green" onclick="addAllowlisted()">Allow</button>
                 </div>
@@ -1208,7 +1461,7 @@
 
             <div class="section">
                 <h2>Blocklist Sources</h2>
-                <div class="add-domain">
+                <div class="add-domain manage-blocklists-only">
                     <input type="text" id="blocklistUrlInput" placeholder="https://example.com/blocklist.txt" />
                     <button class="btn btn-accent" onclick="addBlocklistUrl()">Add Blocklist</button>
                 </div>
@@ -1245,7 +1498,7 @@
                     </label>
                 </div>
                 <div id="upstreamControls">
-                    <div class="add-domain">
+                    <div class="add-domain manage-upstreams-only">
                         <input type="text" id="upstreamInput" placeholder="e.g. tls://1.1.1.1 or 8.8.8.8" />
                         <button class="btn btn-accent" onclick="addUpstream()">Add</button>
                     </div>
@@ -1274,7 +1527,56 @@
                     </table>
                 </div>
             </div>
+
+            <!-- User Management (manage_users only) -->
+            <div class="section manage-users-only" id="usersSection">
+                <h2>User Management</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <span style="font-size: 13px; color: var(--text-muted);">Manage user accounts and permissions</span>
+                    <button class="btn btn-accent btn-sm" onclick="showAddUserModal()">Add User</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Username</th>
+                            <th>Display Name</th>
+                            <th>Status</th>
+                            <th>Permissions</th>
+                            <th>Created</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersBody"></tbody>
+                </table>
+            </div>
+
+            <!-- API Tokens -->
+            <div class="section" id="tokensSection">
+                <h2>API Tokens</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <span style="font-size: 13px; color: var(--text-muted);">Personal access tokens for API authentication</span>
+                    <button class="btn btn-accent btn-sm" onclick="showCreateTokenModal()">Create Token</button>
+                </div>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Permissions</th>
+                            <th>Created</th>
+                            <th>Last Used</th>
+                            <th>Expires</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tokensBody"></tbody>
+                </table>
+            </div>
         </div>
+    </div>
+
+    <!-- Modals -->
+    <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
+        <div class="modal" id="modalContent"></div>
     </div>
 
     <script>
@@ -1285,6 +1587,435 @@
         };
 
         let currentMode = 'simple';
+        let currentUser = null;
+
+        const ALL_PERMISSIONS = [
+            'view_stats', 'view_logs', 'manage_features', 'manage_system',
+            'manage_blocklists', 'manage_allowlist', 'manage_upstreams', 'manage_users'
+        ];
+
+        // ---- Auth: Fetch current user ----
+        async function fetchCurrentUser() {
+            try {
+                const res = await fetch('/api/auth/me');
+                if (res.status === 401) {
+                    window.location.href = '/login';
+                    return null;
+                }
+                if (!res.ok) return null;
+                currentUser = await res.json();
+                applyUserMenu();
+                applyPermissionGating();
+                return currentUser;
+            } catch (e) {
+                console.error('Failed to fetch current user', e);
+                return null;
+            }
+        }
+
+        function hasPerm(perm) {
+            return currentUser && currentUser.permissions && currentUser.permissions.includes(perm);
+        }
+
+        function applyUserMenu() {
+            if (!currentUser) return;
+            document.getElementById('userMenuName').textContent = currentUser.display_name || currentUser.username;
+        }
+
+        function applyPermissionGating() {
+            if (!currentUser) return;
+
+            // Permission to CSS class mapping
+            const permMap = {
+                'manage_features': '.manage-features-only',
+                'manage_system': '.manage-system-only',
+                'manage_blocklists': '.manage-blocklists-only',
+                'manage_allowlist': '.manage-allowlist-only',
+                'manage_upstreams': '.manage-upstreams-only',
+                'manage_users': '.manage-users-only',
+            };
+
+            for (const [perm, selector] of Object.entries(permMap)) {
+                if (!hasPerm(perm)) {
+                    document.querySelectorAll(selector).forEach(el => el.classList.add('perm-hidden'));
+                }
+            }
+
+            // Hide logs tab if no view_logs
+            if (!hasPerm('view_logs')) {
+                document.getElementById('modeLogs').classList.add('perm-hidden');
+            }
+
+            // Disable feature toggles if no manage_features
+            if (!hasPerm('manage_features')) {
+                document.querySelectorAll('.feature-card .toggle-switch').forEach(el => el.classList.add('perm-disabled'));
+            }
+        }
+
+        // Re-apply permission gating after features grid is rebuilt
+        function reapplyFeaturePermissions() {
+            if (!currentUser) return;
+            if (!hasPerm('manage_features')) {
+                document.querySelectorAll('.feature-card .toggle-switch').forEach(el => el.classList.add('perm-disabled'));
+            }
+        }
+
+        // ---- User Menu ----
+        function toggleUserMenu(event) {
+            event.stopPropagation();
+            const dropdown = document.getElementById('userMenuDropdown');
+            dropdown.classList.toggle('open');
+        }
+
+        document.addEventListener('click', function () {
+            const dropdown = document.getElementById('userMenuDropdown');
+            if (dropdown) dropdown.classList.remove('open');
+        });
+
+        function showTokensSection() {
+            document.getElementById('userMenuDropdown').classList.remove('open');
+            setMode('advanced');
+            setTimeout(() => {
+                document.getElementById('tokensSection').scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+            refreshTokens();
+        }
+
+        function showUsersSection() {
+            document.getElementById('userMenuDropdown').classList.remove('open');
+            setMode('advanced');
+            setTimeout(() => {
+                document.getElementById('usersSection').scrollIntoView({ behavior: 'smooth' });
+            }, 100);
+            refreshUsers();
+        }
+
+        async function signOut() {
+            try {
+                await fetch('/api/auth/logout', { method: 'POST' });
+            } catch (e) { /* ignore */ }
+            window.location.href = '/login';
+        }
+
+        // ---- Modal helpers ----
+        function openModal(html) {
+            document.getElementById('modalContent').innerHTML = html;
+            document.getElementById('modalOverlay').classList.add('open');
+        }
+
+        function closeModal() {
+            document.getElementById('modalOverlay').classList.remove('open');
+            document.getElementById('modalContent').innerHTML = '';
+        }
+
+        // ---- User Management ----
+        async function refreshUsers() {
+            if (!hasPerm('manage_users')) return;
+            try {
+                const res = await fetch('/api/users');
+                const users = await res.json();
+                const tbody = document.getElementById('usersBody');
+                tbody.innerHTML = users.map(u => {
+                    const isSelf = currentUser && u.id === currentUser.id;
+                    const perms = (u.permissions || []).map(p => `<span class="perm-badge">${p}</span>`).join('');
+                    const created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
+                    const statusBadge = u.is_active
+                        ? '<span class="badge allowed">Active</span>'
+                        : '<span class="badge blocked">Inactive</span>';
+                    return `<tr>
+                        <td>${escapeHtml(u.username)}</td>
+                        <td>${escapeHtml(u.display_name || '-')}</td>
+                        <td>${statusBadge}</td>
+                        <td><div class="perm-badges">${perms}</div></td>
+                        <td>${created}</td>
+                        <td>
+                            <div class="user-actions">
+                                <button class="btn btn-sm" onclick="showEditUserModal(${u.id})">Edit</button>
+                                <button class="btn btn-sm" onclick="showResetPasswordModal(${u.id}, '${escapeHtml(u.username)}')">Password</button>
+                                ${isSelf ? '' : `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">Delete</button>`}
+                            </div>
+                        </td>
+                    </tr>`;
+                }).join('');
+            } catch (e) { console.error('Failed to load users', e); }
+        }
+
+        function showAddUserModal() {
+            const permChecks = ALL_PERMISSIONS
+                .filter(p => hasPerm(p))
+                .map(p => `<label><input type="checkbox" name="perm" value="${p}"> ${p}</label>`)
+                .join('');
+            openModal(`
+                <h3>Add User</h3>
+                <div class="form-group">
+                    <label>Username</label>
+                    <input type="text" id="newUsername" autocomplete="off">
+                </div>
+                <div class="form-group">
+                    <label>Password</label>
+                    <input type="password" id="newPassword" autocomplete="new-password">
+                </div>
+                <div class="form-group">
+                    <label>Display Name (optional)</label>
+                    <input type="text" id="newDisplayName">
+                </div>
+                <div class="form-group">
+                    <label>Permissions</label>
+                    <div class="perm-checkboxes" id="newUserPerms">${permChecks}</div>
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-accent btn-sm" onclick="createUser()">Create</button>
+                </div>
+            `);
+        }
+
+        async function createUser() {
+            const username = document.getElementById('newUsername').value.trim();
+            const password = document.getElementById('newPassword').value;
+            const display_name = document.getElementById('newDisplayName').value.trim() || null;
+            const permissions = Array.from(document.querySelectorAll('#newUserPerms input:checked')).map(cb => cb.value);
+            if (!username || !password) { alert('Username and password are required.'); return; }
+            try {
+                const res = await fetch('/api/users', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password, display_name, permissions })
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('Failed: ' + (data.error || res.statusText));
+                    return;
+                }
+                closeModal();
+                refreshUsers();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function showEditUserModal(userId) {
+            try {
+                const res = await fetch('/api/users');
+                const users = await res.json();
+                const user = users.find(u => u.id === userId);
+                if (!user) return;
+                const isSelf = currentUser && user.id === currentUser.id;
+                const permChecks = ALL_PERMISSIONS
+                    .filter(p => hasPerm(p))
+                    .map(p => {
+                        const checked = user.permissions.includes(p) ? 'checked' : '';
+                        const disabled = (isSelf && p === 'manage_users') ? 'disabled' : '';
+                        return `<label><input type="checkbox" name="perm" value="${p}" ${checked} ${disabled}> ${p}</label>`;
+                    }).join('');
+                openModal(`
+                    <h3>Edit User: ${escapeHtml(user.username)}</h3>
+                    <div class="form-group">
+                        <label>Display Name</label>
+                        <input type="text" id="editDisplayName" value="${escapeHtml(user.display_name || '')}">
+                    </div>
+                    <div class="form-group">
+                        <label>Active</label>
+                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;color:var(--text-secondary)">
+                            <input type="checkbox" id="editIsActive" ${user.is_active ? 'checked' : ''} ${isSelf ? 'disabled' : ''}>
+                            Account active
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label>Permissions</label>
+                        <div class="perm-checkboxes" id="editUserPerms">${permChecks}</div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+                        <button class="btn btn-accent btn-sm" onclick="saveEditUser(${userId})">Save</button>
+                    </div>
+                `);
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function saveEditUser(userId) {
+            const display_name = document.getElementById('editDisplayName').value.trim() || null;
+            const is_active = document.getElementById('editIsActive').checked;
+            const permissions = Array.from(document.querySelectorAll('#editUserPerms input:checked')).map(cb => cb.value);
+            try {
+                const res = await fetch('/api/users/' + userId, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ display_name, is_active, permissions })
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('Failed: ' + (data.error || res.statusText));
+                    return;
+                }
+                closeModal();
+                refreshUsers();
+                // Refresh current user in case own permissions changed
+                fetchCurrentUser();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        function showResetPasswordModal(userId, username) {
+            openModal(`
+                <h3>Reset Password: ${escapeHtml(username)}</h3>
+                <div class="form-group">
+                    <label>New Password</label>
+                    <input type="password" id="resetPassword" autocomplete="new-password">
+                </div>
+                <div class="modal-actions">
+                    <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-accent btn-sm" onclick="resetPassword(${userId})">Reset</button>
+                </div>
+            `);
+        }
+
+        async function resetPassword(userId) {
+            const password = document.getElementById('resetPassword').value;
+            if (!password) { alert('Password is required.'); return; }
+            try {
+                const res = await fetch('/api/users/' + userId + '/password', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password })
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('Failed: ' + (data.error || res.statusText));
+                    return;
+                }
+                closeModal();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        async function deleteUser(userId, username) {
+            if (!confirm('Delete user "' + username + '"? This cannot be undone.')) return;
+            try {
+                const res = await fetch('/api/users/' + userId, { method: 'DELETE' });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('Failed: ' + (data.error || res.statusText));
+                    return;
+                }
+                refreshUsers();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        // ---- API Token Management ----
+        async function refreshTokens() {
+            try {
+                const res = await fetch('/api/tokens');
+                const tokens = await res.json();
+                const tbody = document.getElementById('tokensBody');
+                tbody.innerHTML = tokens.map(t => {
+                    const perms = (t.permissions || []).map(p => `<span class="perm-badge">${p}</span>`).join('');
+                    const created = t.created_at ? new Date(t.created_at).toLocaleDateString() : '-';
+                    const lastUsed = t.last_used_at ? new Date(t.last_used_at).toLocaleDateString() : 'never';
+                    const expires = t.expires_at ? new Date(t.expires_at).toLocaleDateString() : 'never';
+                    return `<tr>
+                        <td>${escapeHtml(t.name)}</td>
+                        <td><div class="perm-badges">${perms}</div></td>
+                        <td>${created}</td>
+                        <td>${lastUsed}</td>
+                        <td>${expires}</td>
+                        <td>
+                            <div class="token-actions">
+                                <button class="btn btn-danger btn-sm" onclick="revokeToken(${t.id}, '${escapeHtml(t.name)}')">Revoke</button>
+                            </div>
+                        </td>
+                    </tr>`;
+                }).join('');
+            } catch (e) { console.error('Failed to load tokens', e); }
+        }
+
+        function showCreateTokenModal() {
+            const permChecks = ALL_PERMISSIONS
+                .filter(p => hasPerm(p))
+                .map(p => `<label><input type="checkbox" name="tokenperm" value="${p}"> ${p}</label>`)
+                .join('');
+            openModal(`
+                <h3>Create API Token</h3>
+                <div class="form-group">
+                    <label>Token Name</label>
+                    <input type="text" id="tokenName" placeholder="e.g. CI/CD pipeline">
+                </div>
+                <div class="form-group">
+                    <label>Permissions</label>
+                    <div class="perm-checkboxes" id="tokenPerms">${permChecks}</div>
+                </div>
+                <div class="form-group">
+                    <label>Expires (optional)</label>
+                    <input type="date" id="tokenExpiry">
+                </div>
+                <div id="tokenResult"></div>
+                <div class="modal-actions" id="tokenActions">
+                    <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+                    <button class="btn btn-accent btn-sm" onclick="createToken()">Create</button>
+                </div>
+            `);
+        }
+
+        async function createToken() {
+            const name = document.getElementById('tokenName').value.trim();
+            const permissions = Array.from(document.querySelectorAll('#tokenPerms input:checked')).map(cb => cb.value);
+            const expiryVal = document.getElementById('tokenExpiry').value;
+            if (!name) { alert('Token name is required.'); return; }
+            if (permissions.length === 0) { alert('Select at least one permission.'); return; }
+
+            const body = { name, permissions };
+            if (expiryVal) body.expires_at = expiryVal + 'T23:59:59Z';
+
+            try {
+                const res = await fetch('/api/tokens', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(body)
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('Failed: ' + (data.error || res.statusText));
+                    return;
+                }
+                const data = await res.json();
+                // Show token once
+                document.getElementById('tokenResult').innerHTML = `
+                    <div class="token-reveal-box">
+                        <div id="tokenValue">${escapeHtml(data.token)}</div>
+                        <button class="copy-btn" onclick="copyToken()">Copy to clipboard</button>
+                    </div>
+                    <div class="token-warning">This token will not be shown again. Copy it now.</div>
+                `;
+                document.getElementById('tokenActions').innerHTML = `
+                    <button class="btn btn-sm" onclick="closeModal(); refreshTokens();">Done</button>
+                `;
+            } catch (e) { alert('Error: ' + e.message); }
+        }
+
+        function copyToken() {
+            const tokenText = document.getElementById('tokenValue').textContent;
+            navigator.clipboard.writeText(tokenText).then(() => {
+                const btn = document.querySelector('.token-reveal-box .copy-btn');
+                if (btn) { btn.textContent = 'Copied!'; setTimeout(() => btn.textContent = 'Copy to clipboard', 2000); }
+            }).catch(() => {
+                // Fallback
+                const ta = document.createElement('textarea');
+                ta.value = tokenText;
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+            });
+        }
+
+        async function revokeToken(tokenId, tokenName) {
+            if (!confirm('Revoke token "' + tokenName + '"?')) return;
+            try {
+                const res = await fetch('/api/tokens/' + tokenId, { method: 'DELETE' });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    alert('Failed: ' + (data.error || res.statusText));
+                    return;
+                }
+                refreshTokens();
+            } catch (e) { alert('Error: ' + e.message); }
+        }
 
         function setMode(mode) {
             currentMode = mode;
@@ -1304,6 +2035,8 @@
                 refreshCustomBlocked();
                 refreshAllowlist();
                 refreshBlockingMode();
+                if (hasPerm('manage_users')) refreshUsers();
+                refreshTokens();
             }
             if (mode === 'logs') {
                 refreshLogSettings();
@@ -1331,6 +2064,7 @@
                         </label>
                     </div>
                 `).join('');
+                reapplyFeaturePermissions();
                 // Update root servers toggle in advanced panel
                 const rootFeature = features.find(f => f.id === 'root_servers');
                 if (rootFeature) {
@@ -1466,7 +2200,8 @@
                 } else {
                     domains.forEach(d => {
                         const li = document.createElement('li');
-                        li.innerHTML = `<span>${d}</span><button class="btn btn-danger btn-sm" onclick="removeCustomBlocked('${d}')">Remove</button>`;
+                        const removeBtn = hasPerm('manage_blocklists') ? `<button class="btn btn-danger btn-sm" onclick="removeCustomBlocked('${d}')">Remove</button>` : '';
+                        li.innerHTML = `<span>${d}</span>${removeBtn}`;
                         el.appendChild(li);
                     });
                 }
@@ -1509,7 +2244,8 @@
                 } else {
                     domains.forEach(d => {
                         const li = document.createElement('li');
-                        li.innerHTML = `<span>${d}</span><button class="btn btn-danger btn-sm" onclick="removeAllowlisted('${d}')">Remove</button>`;
+                        const removeBtn = hasPerm('manage_allowlist') ? `<button class="btn btn-danger btn-sm" onclick="removeAllowlisted('${d}')">Remove</button>` : '';
+                        li.innerHTML = `<span>${d}</span>${removeBtn}`;
                         el.appendChild(li);
                     });
                 }
@@ -1587,11 +2323,13 @@
                         label.className = 'upstream-label';
                         label.textContent = s;
                         li.appendChild(label);
-                        const btn = document.createElement('button');
-                        btn.className = 'btn-remove';
-                        btn.textContent = 'Remove';
-                        btn.onclick = () => removeBlocklistSource(s);
-                        li.appendChild(btn);
+                        if (hasPerm('manage_blocklists')) {
+                            const btn = document.createElement('button');
+                            btn.className = 'btn-remove';
+                            btn.textContent = 'Remove';
+                            btn.onclick = () => removeBlocklistSource(s);
+                            li.appendChild(btn);
+                        }
                         el.appendChild(li);
                     });
                 }
@@ -1741,11 +2479,13 @@
                     label.className = 'upstream-label';
                     label.textContent = u;
                     li.appendChild(label);
-                    const btn = document.createElement('button');
-                    btn.className = 'btn-remove';
-                    btn.textContent = 'Remove';
-                    btn.onclick = () => removeUpstream(u);
-                    li.appendChild(btn);
+                    if (hasPerm('manage_upstreams')) {
+                        const btn = document.createElement('button');
+                        btn.className = 'btn-remove';
+                        btn.textContent = 'Remove';
+                        btn.onclick = () => removeUpstream(u);
+                        li.appendChild(btn);
+                    }
                     el.appendChild(li);
                 });
             } catch (e) { console.error(e); }
@@ -2286,16 +3026,19 @@
         }
 
         // ---- Auto-refresh ----
+        // Initialize: fetch user first, then load data
+        fetchCurrentUser().then(() => {
+            refreshStats();
+            loadLastRefreshed();
+            pollUpdateStatus();
+            refreshQueries();
+            refreshFeatures();
+            refreshCustomBlocked();
+            refreshAllowlist();
+            refreshCacheStats();
+        });
         setInterval(() => { refreshStats(); refreshQueries(); refreshCacheStats(); }, 2000);
-        refreshStats();
-        loadLastRefreshed();
-        pollUpdateStatus();
         setInterval(pollUpdateStatus, 5000);
-        refreshQueries();
-        refreshFeatures();
-        refreshCustomBlocked();
-        refreshAllowlist();
-        refreshCacheStats();
     </script>
 </body>
 
