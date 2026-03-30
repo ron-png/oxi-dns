@@ -31,6 +31,7 @@ REINSTALL=0
 UNINSTALL=0
 UPDATE=0
 VERBOSE=0
+LEGACY_SERVICE_RUNNING=0
 
 # Legacy package name for backwards compatibility
 OLD_BINARY_NAME="oxi-hole"
@@ -306,28 +307,10 @@ migrate_from_legacy() {
 
     log_step "Migrating from legacy oxi-hole installation"
 
-    # Stop old service
-    detect_init_system
-    case "$INIT_SYSTEM" in
-        systemd)
-            systemctl stop "$OLD_SERVICE_NAME" 2>/dev/null || true
-            systemctl disable "$OLD_SERVICE_NAME" 2>/dev/null || true
-            rm -f "/etc/systemd/system/${OLD_SERVICE_NAME}.service"
-            systemctl daemon-reload 2>/dev/null || true
-            log_info "Old systemd service removed"
-            ;;
-        launchd)
-            launchctl unload "/Library/LaunchDaemons/com.oxi-hole.server.plist" 2>/dev/null || true
-            rm -f "/Library/LaunchDaemons/com.oxi-hole.server.plist"
-            log_info "Old launchd service removed"
-            ;;
-        openrc)
-            rc-service "$OLD_SERVICE_NAME" stop 2>/dev/null || true
-            rc-update del "$OLD_SERVICE_NAME" default 2>/dev/null || true
-            rm -f "/etc/init.d/${OLD_SERVICE_NAME}"
-            log_info "Old OpenRC service removed"
-            ;;
-    esac
+    # NOTE: The old service is kept running intentionally so DNS resolution
+    # remains available for downloading new files. Call stop_legacy_service()
+    # after all downloads are complete.
+    LEGACY_SERVICE_RUNNING=1
 
     # Migrate config directory (preserve user config)
     if [ -d "$OLD_CONFIG_DIR" ] && [ ! -d "$CONFIG_DIR" ]; then
@@ -378,6 +361,36 @@ migrate_from_legacy() {
     fi
 
     log_info "Migration from oxi-hole complete"
+}
+
+stop_legacy_service() {
+    if [ "${LEGACY_SERVICE_RUNNING:-0}" -ne 1 ]; then
+        return 0
+    fi
+
+    log_step "Stopping legacy oxi-hole service"
+    detect_init_system
+    case "$INIT_SYSTEM" in
+        systemd)
+            systemctl stop "$OLD_SERVICE_NAME" 2>/dev/null || true
+            systemctl disable "$OLD_SERVICE_NAME" 2>/dev/null || true
+            rm -f "/etc/systemd/system/${OLD_SERVICE_NAME}.service"
+            systemctl daemon-reload 2>/dev/null || true
+            log_info "Old systemd service removed"
+            ;;
+        launchd)
+            launchctl unload "/Library/LaunchDaemons/com.oxi-hole.server.plist" 2>/dev/null || true
+            rm -f "/Library/LaunchDaemons/com.oxi-hole.server.plist"
+            log_info "Old launchd service removed"
+            ;;
+        openrc)
+            rc-service "$OLD_SERVICE_NAME" stop 2>/dev/null || true
+            rc-update del "$OLD_SERVICE_NAME" default 2>/dev/null || true
+            rm -f "/etc/init.d/${OLD_SERVICE_NAME}"
+            log_info "Old OpenRC service removed"
+            ;;
+    esac
+    LEGACY_SERVICE_RUNNING=0
 }
 
 # ============================================================================
@@ -469,6 +482,9 @@ do_install() {
         fi
         log_info "Configuration pre-downloaded"
     fi
+
+    # All downloads complete — safe to stop legacy service now
+    stop_legacy_service
 
     # Purge existing installation if reinstalling
     if [ "$REINSTALL" -eq 1 ]; then
@@ -679,6 +695,9 @@ do_update() {
         log_error "Binary '$BINARY_NAME' not found in archive"
         exit 1
     fi
+
+    # All downloads complete — safe to stop legacy service now
+    stop_legacy_service
 
     # Backup current binary
     cp "${INSTALL_DIR}/${BINARY_NAME}" "${INSTALL_DIR}/${BINARY_NAME}.bak"
