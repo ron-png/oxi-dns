@@ -199,7 +199,12 @@ impl BlocklistManager {
     /// only see the final filtered domain list.
     async fn fetch_blocklist(&self, source: &str) -> anyhow::Result<Vec<String>> {
         let content = if source.starts_with("http://") || source.starts_with("https://") {
-            let resp = reqwest::get(source).await?;
+            let client = reqwest::Client::new();
+            let resp = client
+                .get(source)
+                .header("Cache-Control", "no-cache")
+                .send()
+                .await?;
             resp.text().await?
         } else {
             tokio::fs::read_to_string(source).await?
