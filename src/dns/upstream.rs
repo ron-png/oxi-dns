@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
+use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 /// DNS root server addresses (IPv4).
@@ -210,8 +211,20 @@ async fn udp_query(
     socket.send_to(packet, server).await?;
 
     let mut buf = vec![0u8; 4096];
-    let (len, _) = tokio::time::timeout(timeout, socket.recv_from(&mut buf)).await??;
+    let (len, src) = tokio::time::timeout(timeout, socket.recv_from(&mut buf)).await??;
+    // RFC 5452 §9.2: validate response source address matches the server we queried
+    if src.ip() != server.ip() || src.port() != server.port() {
+        anyhow::bail!(
+            "DNS response from unexpected source {} (expected {})",
+            src,
+            server
+        );
+    }
     let msg = hickory_proto::op::Message::from_bytes(&buf[..len])?;
+    // RFC 1035 §4.1.1: validate response transaction ID matches the query
+    if packet.len() >= 2 && msg.header().id() != u16::from_be_bytes([packet[0], packet[1]]) {
+        anyhow::bail!("DNS response ID mismatch from {}", server);
+    }
     Ok(msg)
 }
 
@@ -349,12 +362,43 @@ impl CacheEntry {
     }
 }
 
-const CACHE_TTL_FLOOR: u32 = 30;
+const CACHE_TTL_FLOOR: u32 = 5;
 const CACHE_TTL_CEILING: u32 = 86400;
 
-/// Extract the minimum TTL from all records in a DNS response,
-/// clamped to [CACHE_TTL_FLOOR, CACHE_TTL_CEILING].
+/// Extract the appropriate cache TTL from a DNS response.
+/// For negative responses (NXDOMAIN/NODATA), uses the SOA minimum TTL
+/// RFC 2308 §7: only cache NOERROR and NXDOMAIN responses.
+/// SERVFAIL, REFUSED, and other transient errors must not be cached.
+fn is_cacheable_response(msg: &hickory_proto::op::Message) -> bool {
+    use hickory_proto::op::ResponseCode;
+    matches!(
+        msg.response_code(),
+        ResponseCode::NoError | ResponseCode::NXDomain
+    )
+}
+
+/// from the authority section per RFC 2308 §5.
+/// For positive responses, uses the minimum TTL across all records.
+/// Result is clamped to [CACHE_TTL_FLOOR, CACHE_TTL_CEILING].
 fn extract_min_ttl(msg: &hickory_proto::op::Message) -> u32 {
+    use hickory_proto::op::ResponseCode;
+    use hickory_proto::rr::RData;
+
+    let is_negative = msg.response_code() == ResponseCode::NXDomain
+        || (msg.response_code() == ResponseCode::NoError && msg.answers().is_empty());
+
+    if is_negative {
+        // RFC 2308: use SOA minimum TTL from authority section
+        let soa_ttl = msg
+            .name_servers()
+            .iter()
+            .find_map(|r| match r.data() {
+                RData::SOA(soa) => Some(r.ttl().min(soa.minimum())),
+                _ => None,
+            });
+        return soa_ttl.unwrap_or(CACHE_TTL_FLOOR).clamp(CACHE_TTL_FLOOR, CACHE_TTL_CEILING);
+    }
+
     let all_records = msg
         .answers()
         .iter()
@@ -433,6 +477,12 @@ fn extract_glue_records(
     servers
 }
 
+/// A pooled DoQ connection for reuse per RFC 9250 §5.5.1.
+struct DoqPoolEntry {
+    endpoint: quinn::Endpoint,
+    connection: quinn::Connection,
+}
+
 /// Handles forwarding DNS queries to upstream servers with multi-protocol support.
 #[derive(Clone)]
 pub struct UpstreamForwarder {
@@ -445,6 +495,8 @@ pub struct UpstreamForwarder {
     cache_hits: Arc<AtomicU64>,
     cache_misses: Arc<AtomicU64>,
     cache_enabled: Arc<AtomicBool>,
+    /// DoQ connection pool keyed by (addr, hostname) per RFC 9250 §5.5.1.
+    doq_pool: Arc<DashMap<(SocketAddr, String), Arc<Mutex<DoqPoolEntry>>>>,
 }
 
 impl UpstreamForwarder {
@@ -479,6 +531,7 @@ impl UpstreamForwarder {
             cache_hits: Arc::new(AtomicU64::new(0)),
             cache_misses: Arc::new(AtomicU64::new(0)),
             cache_enabled: Arc::new(AtomicBool::new(true)),
+            doq_pool: Arc::new(DashMap::new()),
         })
     }
 
@@ -495,11 +548,12 @@ impl UpstreamForwarder {
         )
     }
 
-    /// Flush the cache and reset counters.
+    /// Flush the cache, reset counters, and close pooled DoQ connections.
     pub fn cache_flush(&self) {
         self.cache.clear();
         self.cache_hits.store(0, Ordering::Relaxed);
         self.cache_misses.store(0, Ordering::Relaxed);
+        self.doq_pool.clear();
     }
 
     /// Set whether caching is enabled.
@@ -507,10 +561,20 @@ impl UpstreamForwarder {
         self.cache_enabled.store(enabled, Ordering::Relaxed);
     }
 
-    /// Remove expired entries from the cache. Returns number removed.
+    /// Remove expired entries from the cache and stale DoQ connections. Returns number removed.
     pub fn evict_expired(&self) -> usize {
         let before = self.cache.len();
         self.cache.retain(|_, entry| !entry.is_expired());
+
+        // Clean up closed DoQ connections
+        self.doq_pool.retain(|_, entry| {
+            // Try to check without blocking; if locked, assume it's in use
+            match entry.try_lock() {
+                Ok(guard) => guard.connection.close_reason().is_none(),
+                Err(_) => true,
+            }
+        });
+
         before - self.cache.len()
     }
 
@@ -684,27 +748,30 @@ impl UpstreamForwarder {
                 while let Some((result, label)) = rx.recv().await {
                     match result {
                         Ok(response) => {
-                            // Store in cache before returning
+                            // Store in cache before returning (RFC 2308 §7: only NOERROR/NXDOMAIN)
                             if self.cache_enabled.load(Ordering::Relaxed) {
                                 if let Ok(resp_msg) =
                                     hickory_proto::op::Message::from_bytes(&response)
                                 {
-                                    if let Ok(orig) = hickory_proto::op::Message::from_bytes(packet)
-                                    {
-                                        if let Some(q) = orig.queries().first() {
-                                            let key = make_cache_key(
-                                                &q.name().to_ascii(),
-                                                q.query_type().into(),
-                                            );
-                                            let ttl = extract_min_ttl(&resp_msg);
-                                            self.cache.insert(
-                                                key,
-                                                CacheEntry {
-                                                    response_bytes: response.clone(),
-                                                    expires_at: Instant::now()
-                                                        + Duration::from_secs(ttl as u64),
-                                                },
-                                            );
+                                    if is_cacheable_response(&resp_msg) {
+                                        if let Ok(orig) =
+                                            hickory_proto::op::Message::from_bytes(packet)
+                                        {
+                                            if let Some(q) = orig.queries().first() {
+                                                let key = make_cache_key(
+                                                    &q.name().to_ascii(),
+                                                    q.query_type().into(),
+                                                );
+                                                let ttl = extract_min_ttl(&resp_msg);
+                                                self.cache.insert(
+                                                    key,
+                                                    CacheEntry {
+                                                        response_bytes: response.clone(),
+                                                        expires_at: Instant::now()
+                                                            + Duration::from_secs(ttl as u64),
+                                                    },
+                                                );
+                                            }
                                         }
                                     }
                                 }
@@ -723,21 +790,25 @@ impl UpstreamForwarder {
             }
         };
 
-        // Store result in cache
+        // Store result in cache (RFC 2308 §7: only NOERROR/NXDOMAIN)
         let (ref response_bytes, ref _label) = result;
         if self.cache_enabled.load(Ordering::Relaxed) {
             if let Ok(resp_msg) = hickory_proto::op::Message::from_bytes(response_bytes) {
-                if let Ok(orig) = hickory_proto::op::Message::from_bytes(packet) {
-                    if let Some(q) = orig.queries().first() {
-                        let key = make_cache_key(&q.name().to_ascii(), q.query_type().into());
-                        let ttl = extract_min_ttl(&resp_msg);
-                        self.cache.insert(
-                            key,
-                            CacheEntry {
-                                response_bytes: response_bytes.clone(),
-                                expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                            },
-                        );
+                if is_cacheable_response(&resp_msg) {
+                    if let Ok(orig) = hickory_proto::op::Message::from_bytes(packet) {
+                        if let Some(q) = orig.queries().first() {
+                            let key =
+                                make_cache_key(&q.name().to_ascii(), q.query_type().into());
+                            let ttl = extract_min_ttl(&resp_msg);
+                            self.cache.insert(
+                                key,
+                                CacheEntry {
+                                    response_bytes: response_bytes.clone(),
+                                    expires_at: Instant::now()
+                                        + Duration::from_secs(ttl as u64),
+                                },
+                            );
+                        }
                     }
                 }
             }
@@ -753,7 +824,20 @@ impl UpstreamForwarder {
         upstream: &UpstreamSpec,
     ) -> anyhow::Result<Vec<u8>> {
         match upstream {
-            UpstreamSpec::Udp(addr) => self.forward_udp(packet, *addr).await,
+            UpstreamSpec::Udp(addr) => {
+                use hickory_proto::serialize::binary::BinDecodable;
+                let response = self.forward_udp(packet, *addr).await?;
+                // Check TC bit and retry over TCP per RFC 7766
+                if let Ok(msg) = hickory_proto::op::Message::from_bytes(&response) {
+                    if msg.header().truncated() {
+                        debug!("Truncated UDP response from {}, retrying via TCP", addr);
+                        if let Ok(tcp_response) = self.forward_tcp(packet, *addr).await {
+                            return Ok(tcp_response);
+                        }
+                    }
+                }
+                Ok(response)
+            }
             UpstreamSpec::Tls { addrs, hostname } => {
                 self.forward_dot(packet, addrs, hostname).await
             }
@@ -852,7 +936,7 @@ impl UpstreamForwarder {
                 let start = labels.len() - qmin_depth;
                 let name_str = format!("{}.", labels[start..].join("."));
                 let name = Name::from_ascii(&name_str)?;
-                build_query(random_query_id(), &name, RecordType::A, false)?
+                build_query(random_query_id(), &name, RecordType::NS, false)?
             };
 
             debug!(
@@ -1209,8 +1293,25 @@ impl UpstreamForwarder {
         let socket = UdpSocket::bind(bind_addr).await?;
         socket.send_to(packet, addr).await?;
 
-        let mut buf = vec![0u8; 4096];
-        let (len, _) = tokio::time::timeout(self.timeout, socket.recv_from(&mut buf)).await??;
+        // RFC 6891 §6.2.5: buffer must accommodate max EDNS0 UDP payload (e.g. DNSSEC responses)
+        let mut buf = vec![0u8; 65535];
+        let (len, src) = tokio::time::timeout(self.timeout, socket.recv_from(&mut buf)).await??;
+        // RFC 5452 §9.2: validate response source address matches the server we queried
+        if src.ip() != addr.ip() || src.port() != addr.port() {
+            anyhow::bail!(
+                "DNS response from unexpected source {} (expected {})",
+                src,
+                addr
+            );
+        }
+        // RFC 1035 §4.1.1: validate response transaction ID matches the query
+        if packet.len() >= 2 && buf.len() >= 2 {
+            let sent_id = u16::from_be_bytes([packet[0], packet[1]]);
+            let recv_id = u16::from_be_bytes([buf[0], buf[1]]);
+            if sent_id != recv_id {
+                anyhow::bail!("DNS response ID mismatch from {}", addr);
+            }
+        }
         Ok(buf[..len].to_vec())
     }
 
@@ -1383,6 +1484,16 @@ impl UpstreamForwarder {
             anyhow::bail!("DoH upstream returned status {}", response.status());
         }
 
+        // RFC 8484 §4.1: validate response Content-Type
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("");
+        if !content_type.starts_with("application/dns-message") {
+            anyhow::bail!("DoH: unexpected Content-Type from upstream: {}", content_type);
+        }
+
         let body = response.bytes().await?;
         Ok(body.to_vec())
     }
@@ -1426,12 +1537,43 @@ impl UpstreamForwarder {
         Err(last_err.unwrap_or_else(|| anyhow::anyhow!("DoQ: all addresses failed")))
     }
 
-    async fn forward_doq_single(
+    /// Send a single DoQ query on a QUIC connection, returning the response bytes.
+    async fn doq_query_on_connection(
         &self,
         packet: &[u8],
+        connection: &quinn::Connection,
+    ) -> anyhow::Result<Vec<u8>> {
+        let (mut send, mut recv) =
+            tokio::time::timeout(self.timeout, connection.open_bi()).await??;
+
+        // DoQ: no length prefix per RFC 9250 §4.2
+        // RFC 9250 §4.2.1: DNS Message ID MUST be set to 0 over QUIC
+        let mut doq_packet = packet.to_vec();
+        if doq_packet.len() >= 2 {
+            doq_packet[0] = 0;
+            doq_packet[1] = 0;
+        }
+        send.write_all(&doq_packet).await?;
+        send.finish()?;
+
+        let resp_buf = tokio::time::timeout(self.timeout, recv.read_to_end(65535)).await??;
+
+        // Restore original message ID in the response for the caller
+        let mut response = resp_buf;
+        if response.len() >= 2 && packet.len() >= 2 {
+            response[0] = packet[0];
+            response[1] = packet[1];
+        }
+
+        Ok(response)
+    }
+
+    /// Create a new QUIC endpoint and connection for DoQ.
+    async fn doq_connect(
+        &self,
         addr: SocketAddr,
         hostname: &str,
-    ) -> anyhow::Result<Vec<u8>> {
+    ) -> anyhow::Result<DoqPoolEntry> {
         let bind_addr: std::net::SocketAddr = if addr.is_ipv4() {
             "0.0.0.0:0".parse()?
         } else {
@@ -1443,26 +1585,55 @@ impl UpstreamForwarder {
         let connection =
             tokio::time::timeout(self.timeout, endpoint.connect(addr, hostname)?).await??;
 
-        let (mut send, mut recv) =
-            tokio::time::timeout(self.timeout, connection.open_bi()).await??;
+        Ok(DoqPoolEntry {
+            endpoint,
+            connection,
+        })
+    }
 
-        // DoQ: 2-byte length prefix + DNS message
-        let len_bytes = (packet.len() as u16).to_be_bytes();
-        send.write_all(&len_bytes).await?;
-        send.write_all(packet).await?;
-        send.finish()?;
+    async fn forward_doq_single(
+        &self,
+        packet: &[u8],
+        addr: SocketAddr,
+        hostname: &str,
+    ) -> anyhow::Result<Vec<u8>> {
+        let pool_key = (addr, hostname.to_string());
 
-        let mut resp_len_buf = [0u8; 2];
-        tokio::time::timeout(self.timeout, recv.read_exact(&mut resp_len_buf)).await??;
-        let resp_len = u16::from_be_bytes(resp_len_buf) as usize;
+        // Try reusing a pooled connection (RFC 9250 §5.5.1)
+        if let Some(entry) = self.doq_pool.get(&pool_key) {
+            let guard = entry.lock().await;
+            if guard.connection.close_reason().is_none() {
+                match self.doq_query_on_connection(packet, &guard.connection).await {
+                    Ok(response) => return Ok(response),
+                    Err(e) => {
+                        debug!("DoQ pooled connection to {}:{} failed: {}, reconnecting", addr, hostname, e);
+                        drop(guard);
+                        self.doq_pool.remove(&pool_key);
+                    }
+                }
+            } else {
+                drop(guard);
+                self.doq_pool.remove(&pool_key);
+            }
+        }
 
-        let mut resp_buf = vec![0u8; resp_len];
-        tokio::time::timeout(self.timeout, recv.read_exact(&mut resp_buf)).await??;
+        // Create a new connection and pool it
+        let entry = self.doq_connect(addr, hostname).await?;
+        let result = self.doq_query_on_connection(packet, &entry.connection).await;
 
-        connection.close(0u32.into(), b"done");
-        endpoint.wait_idle().await;
-
-        Ok(resp_buf)
+        match result {
+            Ok(response) => {
+                self.doq_pool
+                    .insert(pool_key, Arc::new(Mutex::new(entry)));
+                Ok(response)
+            }
+            Err(e) => {
+                // Connection failed immediately — close and don't pool
+                entry.connection.close(0u32.into(), b"");
+                entry.endpoint.wait_idle().await;
+                Err(e)
+            }
+        }
     }
 }
 
@@ -1491,12 +1662,9 @@ fn build_query(
     Ok(msg.to_vec()?)
 }
 
-/// Generate a pseudo-random query ID.
+/// Generate a random query ID using cryptographic randomness (RFC 5452).
 fn random_query_id() -> u16 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.subsec_nanos() as u16)
-        .unwrap_or(1234)
+    rand::random::<u16>()
 }
 
 #[cfg(test)]
@@ -1596,10 +1764,10 @@ mod cache_tests {
         msg.set_header(header);
 
         let name = Name::from_ascii("example.com.").unwrap();
-        let record = Record::from_rdata(name, 5, RData::A("1.2.3.4".parse().unwrap()));
+        let record = Record::from_rdata(name, 2, RData::A("1.2.3.4".parse().unwrap()));
         msg.add_answer(record);
 
-        assert_eq!(extract_min_ttl(&msg), 30);
+        assert_eq!(extract_min_ttl(&msg), CACHE_TTL_FLOOR);
     }
 
     #[test]
@@ -1632,7 +1800,7 @@ mod cache_tests {
         header.set_response_code(ResponseCode::NoError);
         msg.set_header(header);
 
-        assert_eq!(extract_min_ttl(&msg), 30);
+        assert_eq!(extract_min_ttl(&msg), CACHE_TTL_FLOOR);
     }
 
     #[test]

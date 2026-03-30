@@ -5,24 +5,21 @@ use crate::dns::upstream::UpstreamForwarder;
 use crate::features::FeatureManager;
 use crate::query_log::QueryLog;
 use crate::stats::Stats;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
-use tokio_rustls::TlsAcceptor;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 
-/// Maximum concurrent DoT connections (RFC 7858 §3.4 recommends limiting).
-const MAX_DOT_CONNECTIONS: usize = 512;
+/// Idle timeout for plain TCP DNS connections in seconds (RFC 7766 §6.2.3).
+const TCP_IDLE_TIMEOUT_SECS: u64 = 30;
 
-/// Idle timeout for DoT connections in seconds (RFC 7858 §3.4).
-const DOT_IDLE_TIMEOUT_SECS: u64 = 30;
-
-/// Maximum DNS message size over DoT. Cap at 4096 to limit memory allocation
-/// from untrusted clients (legitimate DNS queries are far smaller).
-const MAX_DOT_MESSAGE_LEN: usize = 4096;
+/// Maximum DNS message size over TCP. DNS messages can be at most 65535 bytes
+/// (limited by the 2-byte length prefix), but legitimate queries are far smaller.
+/// Cap at 4096 to limit memory allocation from untrusted clients.
+const MAX_DNS_TCP_MESSAGE_LEN: usize = 4096;
 
 fn bind_tcp_reuse_port(addr: &str) -> anyhow::Result<std::net::TcpListener> {
     use socket2::{Domain, Protocol, Socket, Type};
@@ -48,39 +45,23 @@ pub async fn run(
     upstream: UpstreamForwarder,
     features: FeatureManager,
     blocking_mode: Arc<RwLock<BlockingMode>>,
-    tls_config: Arc<rustls::ServerConfig>,
     query_log: QueryLog,
     anonymize_ip: Arc<AtomicBool>,
     ipv6_enabled: Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
     let std_listener = bind_tcp_reuse_port(&addr)?;
     let listener = TcpListener::from_std(std_listener)?;
-    let acceptor = TlsAcceptor::from(tls_config);
-    let active_connections = Arc::new(AtomicUsize::new(0));
-    info!("DoT listener ready on {}", addr);
+    info!("Plain TCP DNS listener ready on {}", addr);
 
     loop {
         let (tcp_stream, peer) = match listener.accept().await {
             Ok(r) => r,
             Err(e) => {
-                error!("DoT accept error: {}", e);
+                error!("TCP DNS accept error: {}", e);
                 continue;
             }
         };
 
-        // Enforce connection limit (RFC 7858 §3.4)
-        // Increment first, then check — avoids TOCTOU race where a burst of accepts
-        // all see count < MAX and all pass the guard.
-        let conn_count = active_connections.clone();
-        let prev = conn_count.fetch_add(1, Ordering::AcqRel);
-        if prev >= MAX_DOT_CONNECTIONS {
-            conn_count.fetch_sub(1, Ordering::AcqRel);
-            warn!("DoT connection limit reached ({}), rejecting {}", MAX_DOT_CONNECTIONS, peer);
-            drop(tcp_stream);
-            continue;
-        }
-
-        let acceptor = acceptor.clone();
         let bl = blocklist.clone();
         let st = stats.clone();
         let up = upstream.clone();
@@ -91,39 +72,29 @@ pub async fn run(
         let ipv6 = ipv6_enabled.clone();
 
         tokio::spawn(async move {
-            let result = async {
-                match acceptor.accept(tcp_stream).await {
-                    Ok(tls_stream) => {
-                        if let Err(e) = handle_dot_connection(
-                            tls_stream,
-                            &peer.ip().to_string(),
-                            &bl,
-                            &st,
-                            &up,
-                            &ft,
-                            &bm,
-                            &ql,
-                            &anon,
-                            &ipv6,
-                        )
-                        .await
-                        {
-                            debug!("DoT connection error from {}: {}", peer, e);
-                        }
-                    }
-                    Err(e) => debug!("TLS handshake failed from {}: {}", peer, e),
-                }
+            if let Err(e) = handle_tcp_connection(
+                tcp_stream,
+                &peer.ip().to_string(),
+                &bl,
+                &st,
+                &up,
+                &ft,
+                &bm,
+                &ql,
+                &anon,
+                &ipv6,
+            )
+            .await
+            {
+                debug!("TCP DNS connection error from {}: {}", peer, e);
             }
-            .await;
-            conn_count.fetch_sub(1, Ordering::AcqRel);
-            result
         });
     }
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn handle_dot_connection(
-    mut stream: tokio_rustls::server::TlsStream<tokio::net::TcpStream>,
+async fn handle_tcp_connection(
+    mut stream: tokio::net::TcpStream,
     client_ip: &str,
     blocklist: &BlocklistManager,
     stats: &Stats,
@@ -134,33 +105,34 @@ async fn handle_dot_connection(
     anonymize_ip: &Arc<AtomicBool>,
     ipv6_enabled: &Arc<AtomicBool>,
 ) -> anyhow::Result<()> {
-    let idle_timeout = Duration::from_secs(DOT_IDLE_TIMEOUT_SECS);
+    let idle_timeout = Duration::from_secs(TCP_IDLE_TIMEOUT_SECS);
 
     loop {
-        // Apply idle timeout when waiting for next query (RFC 7858 §3.4)
+        // RFC 1035 §4.2.2: 2-byte big-endian length prefix for TCP DNS
+        // Apply idle timeout when waiting for next query (RFC 7766 §6.2.3)
         let mut len_buf = [0u8; 2];
         match tokio::time::timeout(idle_timeout, stream.read_exact(&mut len_buf)).await {
             Ok(Ok(_)) => {}
             Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
             Ok(Err(e)) => return Err(e.into()),
             Err(_) => {
-                debug!("DoT connection idle timeout for {}", client_ip);
+                debug!("TCP DNS connection idle timeout for {}", client_ip);
                 return Ok(());
             }
         }
         let msg_len = u16::from_be_bytes(len_buf) as usize;
-        if msg_len == 0 || msg_len > MAX_DOT_MESSAGE_LEN {
-            anyhow::bail!("DoT message length out of range: {}", msg_len);
+        if msg_len == 0 || msg_len > MAX_DNS_TCP_MESSAGE_LEN {
+            anyhow::bail!("DNS TCP message length out of range: {}", msg_len);
         }
 
-        // Apply timeout on body read to prevent partial-send connection exhaustion (RFC 7858 §3.4)
+        // Apply timeout on body read to prevent partial-send connection exhaustion
         let mut msg_buf = vec![0u8; msg_len];
         match tokio::time::timeout(idle_timeout, stream.read_exact(&mut msg_buf)).await {
             Ok(Ok(_)) => {}
             Ok(Err(e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(()),
             Ok(Err(e)) => return Err(e.into()),
             Err(_) => {
-                debug!("DoT body read timeout for {}", client_ip);
+                debug!("TCP DNS body read timeout for {}", client_ip);
                 return Ok(());
             }
         }
@@ -186,14 +158,13 @@ async fn handle_dot_connection(
                     handler::DnsError::ParseError(_) => ResponseCode::FormErr,
                     handler::DnsError::ServerError(_) => ResponseCode::ServFail,
                 };
-                debug!("DoT query error ({}): {}", rcode, e);
                 handler::build_error_response(&msg_buf, rcode)
             }
         };
 
         let resp_len = u16::try_from(response.len())
-            .map_err(|_| anyhow::anyhow!("DNS response too large for DoT framing: {} bytes", response.len()))?;
-        // Write length prefix + body as single buffer to avoid packet fragmentation
+            .map_err(|_| anyhow::anyhow!("DNS response too large for TCP framing: {} bytes", response.len()))?;
+        // Write length prefix + body as single buffer to avoid packet fragmentation (RFC 7766 §8)
         let mut framed = Vec::with_capacity(2 + response.len());
         framed.extend_from_slice(&resp_len.to_be_bytes());
         framed.extend_from_slice(&response);

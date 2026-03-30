@@ -97,7 +97,7 @@ async fn main() -> anyhow::Result<()> {
         info!("Running health check...");
 
         // Build TLS configs (needed for upstream)
-        let client_tls_config = tls::build_client_config()?;
+        let client_tls_config = tls::build_client_config(vec![b"dot".to_vec()])?;
         let quic_client_config = tls::build_quic_client_config()?;
 
         // Build upstream forwarder (tests hostname resolution)
@@ -138,13 +138,20 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    // Build TLS configs
-    let needs_tls = config.dns.dot_listen.is_some()
-        || config.dns.doh_listen.is_some()
-        || config.dns.doq_listen.is_some();
+    // Build per-protocol TLS configs with correct ALPN
+    let dot_tls_config = if config.dns.dot_listen.is_some() {
+        // RFC 8310 / RFC 7858: advertise "dot" ALPN token
+        Some(tls::build_server_config(&config.tls, vec![b"dot".to_vec()])?)
+    } else {
+        None
+    };
 
-    let server_tls_config = if needs_tls {
-        Some(tls::build_server_config(&config.tls)?)
+    let doh_tls_config = if config.dns.doh_listen.is_some() {
+        // RFC 8484 §5.2: DoH MUST use HTTP/2 — only advertise h2
+        Some(tls::build_server_config(
+            &config.tls,
+            vec![b"h2".to_vec()],
+        )?)
     } else {
         None
     };
@@ -155,7 +162,8 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let client_tls_config = tls::build_client_config()?;
+    // RFC 7858 §3.3: advertise "dot" ALPN for upstream DoT connections
+    let client_tls_config = tls::build_client_config(vec![b"dot".to_vec()])?;
     let quic_client_config = tls::build_quic_client_config()?;
 
     // Initialize blocklist manager (loaded after DNS is ready to avoid bootstrap issues)
@@ -209,7 +217,8 @@ async fn main() -> anyhow::Result<()> {
         upstream,
         feature_manager.clone(),
         blocking_mode.clone(),
-        server_tls_config,
+        dot_tls_config,
+        doh_tls_config,
         quic_server_config,
         Some(dns_ready_tx),
         query_log.clone(),

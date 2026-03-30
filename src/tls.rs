@@ -4,31 +4,58 @@ use std::sync::Arc;
 use tracing::info;
 
 /// Load or generate TLS certificate and key, returning a rustls ServerConfig.
-pub fn build_server_config(tls_config: &TlsConfig) -> anyhow::Result<Arc<rustls::ServerConfig>> {
+/// `alpn_protocols` sets the ALPN tokens advertised during TLS handshake.
+pub fn build_server_config(
+    tls_config: &TlsConfig,
+    alpn_protocols: Vec<Vec<u8>>,
+) -> anyhow::Result<Arc<rustls::ServerConfig>> {
     let (certs, key) = load_or_generate_certs(tls_config)?;
 
-    let config = rustls::ServerConfig::builder()
-        .with_no_client_auth()
-        .with_single_cert(certs, key)?;
+    // RFC 7858 §3.1: TLS 1.2 minimum, prefer TLS 1.3
+    let mut config = rustls::ServerConfig::builder_with_protocol_versions(&[
+        &rustls::version::TLS13,
+        &rustls::version::TLS12,
+    ])
+    .with_no_client_auth()
+    .with_single_cert(certs, key)?;
+
+    config.alpn_protocols = alpn_protocols;
 
     Ok(Arc::new(config))
 }
 
 /// Build a rustls ClientConfig that trusts common CAs (for upstream DoT/DoQ).
-pub fn build_client_config() -> anyhow::Result<Arc<rustls::ClientConfig>> {
+/// `alpn_protocols` sets the ALPN tokens sent during TLS handshake.
+pub fn build_client_config(
+    alpn_protocols: Vec<Vec<u8>>,
+) -> anyhow::Result<Arc<rustls::ClientConfig>> {
     let mut root_store = rustls::RootCertStore::empty();
     root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
-    let config = rustls::ClientConfig::builder()
-        .with_root_certificates(root_store)
-        .with_no_client_auth();
+    let mut config = rustls::ClientConfig::builder_with_protocol_versions(&[
+        &rustls::version::TLS13,
+        &rustls::version::TLS12,
+    ])
+    .with_root_certificates(root_store)
+    .with_no_client_auth();
+
+    config.alpn_protocols = alpn_protocols;
 
     Ok(Arc::new(config))
 }
 
 /// Build a quinn::ServerConfig from our rustls ServerConfig for DoQ.
 pub fn build_quic_server_config(tls_config: &TlsConfig) -> anyhow::Result<quinn::ServerConfig> {
-    let rustls_config = build_server_config(tls_config)?;
+    let rustls_config = build_server_config(tls_config, vec![b"doq".to_vec()])?;
+    // RFC 9250 §4.5: server MUST NOT process 0-RTT data — ensure max_early_data_size is 0.
+    // rustls defaults to 0, but we enforce it explicitly for safety against future default changes.
+    {
+        let inner = rustls_config.as_ref();
+        assert_eq!(
+            inner.max_early_data_size, 0,
+            "DoQ: 0-RTT must be disabled (RFC 9250 §4.5)"
+        );
+    }
     let quic_crypto = quinn::crypto::rustls::QuicServerConfig::try_from(rustls_config)?;
 
     let mut quic_config = quinn::ServerConfig::with_crypto(Arc::new(quic_crypto));
@@ -40,7 +67,7 @@ pub fn build_quic_server_config(tls_config: &TlsConfig) -> anyhow::Result<quinn:
 
 /// Build a quinn::ClientConfig for upstream DoQ connections.
 pub fn build_quic_client_config() -> anyhow::Result<quinn::ClientConfig> {
-    let client_tls = build_client_config()?;
+    let client_tls = build_client_config(vec![b"doq".to_vec()])?;
     let quic_crypto = quinn::crypto::rustls::QuicClientConfig::try_from(client_tls)?;
     let client_config = quinn::ClientConfig::new(Arc::new(quic_crypto));
     Ok(client_config)
@@ -51,6 +78,8 @@ fn default_quic_transport() -> quinn::TransportConfig {
     transport.max_idle_timeout(Some(
         quinn::IdleTimeout::try_from(std::time::Duration::from_secs(30)).unwrap(),
     ));
+    // RFC 9250 §7: limit concurrent streams to protect against resource exhaustion
+    transport.max_concurrent_bidi_streams(quinn::VarInt::from_u32(128));
     transport
 }
 

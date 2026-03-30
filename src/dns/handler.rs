@@ -15,6 +15,37 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 use tracing::debug;
 
+/// Typed error for DNS query processing, allowing callers to distinguish
+/// parse failures (FORMERR) from upstream/internal failures (SERVFAIL).
+#[derive(Debug)]
+pub enum DnsError {
+    /// The query could not be parsed — respond with FORMERR (RFC 1035 §4.1.1)
+    ParseError(anyhow::Error),
+    /// The query was valid but processing failed — respond with SERVFAIL
+    ServerError(anyhow::Error),
+}
+
+impl std::fmt::Display for DnsError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DnsError::ParseError(e) => write!(f, "parse error: {}", e),
+            DnsError::ServerError(e) => write!(f, "server error: {}", e),
+        }
+    }
+}
+
+impl From<anyhow::Error> for DnsError {
+    fn from(e: anyhow::Error) -> Self {
+        DnsError::ServerError(e)
+    }
+}
+
+impl From<hickory_proto::ProtoError> for DnsError {
+    fn from(e: hickory_proto::ProtoError) -> Self {
+        DnsError::ServerError(e.into())
+    }
+}
+
 /// Process a DNS query: check safe search, check blocklist, forward if allowed.
 #[allow(clippy::too_many_arguments)]
 pub async fn process_dns_query(
@@ -28,13 +59,31 @@ pub async fn process_dns_query(
     query_log: &QueryLog,
     anonymize_ip_flag: &Arc<AtomicBool>,
     ipv6_enabled: &Arc<AtomicBool>,
-) -> anyhow::Result<Vec<u8>> {
+) -> Result<Vec<u8>, DnsError> {
     let start = Instant::now();
-    let request = Message::from_bytes(packet)?;
+    let request = Message::from_bytes(packet).map_err(|e| DnsError::ParseError(e.into()))?;
+
+    // RFC 1035 §4.1.1: reject non-QUERY opcodes with NOTIMPL (RCODE=4)
+    if request.header().op_code() != OpCode::Query {
+        let mut response = Message::new();
+        let mut header = Header::new();
+        header.set_id(request.header().id());
+        header.set_message_type(MessageType::Response);
+        header.set_op_code(request.header().op_code());
+        header.set_recursion_desired(request.header().recursion_desired());
+        header.set_recursion_available(true);
+        header.set_response_code(ResponseCode::NotImp);
+        response.set_header(header);
+        for query in request.queries() {
+            response.add_query(query.clone());
+        }
+        echo_edns_opt(&request, &mut response);
+        return Ok(response.to_vec()?);
+    }
 
     let question = match request.queries().first() {
         Some(q) => q,
-        None => anyhow::bail!("No question in DNS query"),
+        None => return Err(DnsError::ParseError(anyhow::anyhow!("No question in DNS query"))),
     };
 
     let domain = question.name().to_string();
@@ -222,14 +271,52 @@ pub async fn process_dns_query(
     Ok(response_bytes)
 }
 
+/// Build an RFC-compliant error response from raw packet bytes.
+/// Sets RA, echoes question section and EDNS OPT when the query is parseable.
+pub fn build_error_response(packet: &[u8], rcode: ResponseCode) -> Vec<u8> {
+    let mut resp = Message::new();
+    let mut header = Header::new();
+    if packet.len() >= 2 {
+        header.set_id(u16::from_be_bytes([packet[0], packet[1]]));
+    }
+    header.set_message_type(MessageType::Response);
+    header.set_response_code(rcode);
+    header.set_recursion_available(true);
+    resp.set_header(header);
+
+    if let Ok(req) = Message::from_bytes(packet) {
+        // RFC 1035 §4.1.1: OPCODE must be copied from query to response
+        header.set_op_code(req.header().op_code());
+        header.set_recursion_desired(req.header().recursion_desired());
+        resp.set_header(header);
+        for query in req.queries() {
+            resp.add_query(query.clone());
+        }
+        echo_edns_opt(&req, &mut resp);
+    }
+
+    resp.to_vec().unwrap_or_default()
+}
+
+/// If the request contains an EDNS0 OPT record, add one to the response (RFC 6891 §7).
+/// This signals to the client that the server supports EDNS.
+fn echo_edns_opt(request: &Message, response: &mut Message) {
+    if request.extensions().is_some() {
+        let mut server_opt = hickory_proto::op::Edns::new();
+        server_opt.set_max_payload(1232); // RFC 6891 §6.2.5
+        server_opt.set_version(0);
+        response.set_edns(server_opt);
+    }
+}
+
 /// Build a safe search response that returns a specific IP.
 fn build_safe_search_response(request: &Message, domain: &str, ip: Ipv4Addr) -> Message {
     let mut response = Message::new();
     let mut header = Header::new();
     header.set_id(request.header().id());
     header.set_message_type(MessageType::Response);
-    header.set_op_code(OpCode::Query);
-    header.set_authoritative(true);
+    header.set_op_code(request.header().op_code());
+    header.set_authoritative(false); // RFC 1035 §6: not authoritative for rewritten domains
     header.set_recursion_desired(request.header().recursion_desired());
     header.set_recursion_available(true);
     header.set_response_code(ResponseCode::NoError);
@@ -243,6 +330,7 @@ fn build_safe_search_response(request: &Message, domain: &str, ip: Ipv4Addr) -> 
     let rdata = RData::A(ip.into());
     let record = Record::from_rdata(name, 3600, rdata);
     response.add_answer(record);
+    echo_edns_opt(request, &mut response);
 
     response
 }
@@ -258,7 +346,7 @@ fn build_blocked_response(
     let mut header = Header::new();
     header.set_id(request.header().id());
     header.set_message_type(MessageType::Response);
-    header.set_op_code(OpCode::Query);
+    header.set_op_code(request.header().op_code());
     header.set_authoritative(true);
     header.set_recursion_desired(request.header().recursion_desired());
     header.set_recursion_available(true);
@@ -270,6 +358,7 @@ fn build_blocked_response(
             for query in request.queries() {
                 response.add_query(query.clone());
             }
+            echo_edns_opt(request, &mut response);
             return response;
         }
         BlockingMode::NxDomain => {
@@ -278,6 +367,7 @@ fn build_blocked_response(
             for query in request.queries() {
                 response.add_query(query.clone());
             }
+            echo_edns_opt(request, &mut response);
             return response;
         }
         _ => {
@@ -322,6 +412,7 @@ fn build_blocked_response(
         BlockingMode::Refused | BlockingMode::NxDomain => unreachable!(),
     }
 
+    echo_edns_opt(request, &mut response);
     response
 }
 
@@ -341,12 +432,7 @@ async fn build_cname_rewrite_response(
 
     let mut resolve_req = Message::new();
     let mut hdr = Header::new();
-    hdr.set_id(
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.subsec_nanos() as u16)
-            .unwrap_or(1234),
-    );
+    hdr.set_id(rand::random::<u16>());
     hdr.set_message_type(MessageType::Query);
     hdr.set_op_code(OpCode::Query);
     hdr.set_recursion_desired(true);
@@ -366,8 +452,8 @@ async fn build_cname_rewrite_response(
     let mut header = Header::new();
     header.set_id(request.header().id());
     header.set_message_type(MessageType::Response);
-    header.set_op_code(OpCode::Query);
-    header.set_authoritative(true);
+    header.set_op_code(request.header().op_code());
+    header.set_authoritative(false); // not authoritative for forwarded CNAME responses
     header.set_recursion_desired(request.header().recursion_desired());
     header.set_recursion_available(true);
     header.set_response_code(ResponseCode::NoError);
@@ -395,17 +481,20 @@ async fn build_cname_rewrite_response(
         }
     }
 
+    echo_edns_opt(request, &mut response);
     Some(response)
 }
 
 /// Build an empty (NOERROR, no answers) response.
+/// Used for IPv6-disabled AAAA filtering and safe-search with no AAAA equivalent.
 fn build_empty_response(request: &Message) -> Message {
     let mut response = Message::new();
     let mut header = Header::new();
     header.set_id(request.header().id());
     header.set_message_type(MessageType::Response);
-    header.set_op_code(OpCode::Query);
-    header.set_authoritative(true);
+    header.set_op_code(request.header().op_code());
+    // RFC 1035 §4.1.1: AA=false — we are not authoritative for filtered domains
+    header.set_authoritative(false);
     header.set_recursion_desired(request.header().recursion_desired());
     header.set_recursion_available(true);
     header.set_response_code(ResponseCode::NoError);
@@ -413,6 +502,7 @@ fn build_empty_response(request: &Message) -> Message {
     for query in request.queries() {
         response.add_query(query.clone());
     }
+    echo_edns_opt(request, &mut response);
     response
 }
 

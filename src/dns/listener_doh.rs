@@ -11,6 +11,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::Router;
 use base64::Engine;
+use hickory_proto::op::ResponseCode;
 use serde::Deserialize;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
@@ -104,9 +105,11 @@ pub async fn run(
 
             let io = hyper_util::rt::TokioIo::new(tls_stream);
             let service =
-                hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                hyper::service::service_fn(move |mut req: hyper::Request<hyper::body::Incoming>| {
                     let app = app.clone();
                     async move {
+                        // Inject peer address so handlers can extract real client IP
+                        req.extensions_mut().insert(peer);
                         let (parts, body) = req.into_parts();
                         let body = match http_body_util::BodyExt::collect(body).await {
                             Ok(collected) => axum::body::Body::from(collected.to_bytes()),
@@ -139,6 +142,13 @@ async fn doh_get(
     Query(params): Query<DohGetParams>,
     req: axum::extract::Request,
 ) -> impl IntoResponse {
+    // RFC 8484 §4.1: validate Accept header if present
+    if let Some(accept) = req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
+        if !accept.contains("application/dns-message") && !accept.contains("*/*") {
+            return StatusCode::NOT_ACCEPTABLE.into_response();
+        }
+    }
+
     let client_ip = extract_client_ip(&req);
 
     let packet = match base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(&params.dns) {
@@ -160,21 +170,42 @@ async fn doh_get(
     )
     .await
     {
-        Ok(response) => (
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, "application/dns-message")],
-            response,
-        )
-            .into_response(),
+        Ok(response) => build_doh_response(response),
         Err(e) => {
             debug!("DoH GET error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "DNS query failed").into_response()
+            match e {
+                // RFC 8484 §4.2.1: DNS errors are returned as DNS messages in the HTTP body,
+                // not as HTTP error status codes.
+                handler::DnsError::ParseError(_) => build_dns_error_response(&packet, ResponseCode::FormErr),
+                handler::DnsError::ServerError(_) => build_dns_error_response(&packet, ResponseCode::ServFail),
+            }
         }
     }
 }
 
 async fn doh_post(State(state): State<DohState>, req: axum::extract::Request) -> impl IntoResponse {
+    // RFC 8484 §4.1: validate Accept header if present
+    if let Some(accept) = req.headers().get(header::ACCEPT).and_then(|v| v.to_str().ok()) {
+        if !accept.contains("application/dns-message") && !accept.contains("*/*") {
+            return StatusCode::NOT_ACCEPTABLE.into_response();
+        }
+    }
+
     let client_ip = extract_client_ip(&req);
+
+    // Validate Content-Type per RFC 8484 §4.1
+    let content_type = req
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    if !content_type.starts_with("application/dns-message") {
+        return (
+            StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            "Content-Type must be application/dns-message",
+        )
+            .into_response();
+    }
 
     let body = match axum::body::to_bytes(req.into_body(), 65535).await {
         Ok(b) => b,
@@ -195,29 +226,65 @@ async fn doh_post(State(state): State<DohState>, req: axum::extract::Request) ->
     )
     .await
     {
-        Ok(response) => (
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, "application/dns-message")],
-            response,
-        )
-            .into_response(),
+        Ok(response) => build_doh_response(response),
         Err(e) => {
             debug!("DoH POST error: {}", e);
-            (StatusCode::INTERNAL_SERVER_ERROR, "DNS query failed").into_response()
+            match e {
+                // RFC 8484 §4.2.1: DNS errors are returned as DNS messages in the HTTP body,
+                // not as HTTP error status codes.
+                handler::DnsError::ParseError(_) => build_dns_error_response(&body, ResponseCode::FormErr),
+                handler::DnsError::ServerError(_) => build_dns_error_response(&body, ResponseCode::ServFail),
+            }
         }
     }
 }
 
-fn extract_client_ip(req: &axum::extract::Request) -> String {
-    req.headers()
-        .get("x-forwarded-for")
-        .and_then(|v| v.to_str().ok())
-        .map(|s| {
-            s.split(',')
-                .next()
-                .unwrap_or("doh-client")
-                .trim()
-                .to_string()
+/// Build a DNS error response for DoH (RFC 8484 §4.2.1: DNS errors go in the body, not HTTP status).
+fn build_dns_error_response(packet: &[u8], rcode: ResponseCode) -> axum::response::Response {
+    let bytes = handler::build_error_response(packet, rcode);
+    build_doh_response(bytes)
+}
+
+/// Build a DoH HTTP response with proper Content-Type and Cache-Control headers (RFC 8484 §5.1).
+fn build_doh_response(response: Vec<u8>) -> axum::response::Response {
+    use hickory_proto::serialize::binary::BinDecodable;
+
+    // Extract minimum TTL for Cache-Control max-age (RFC 8484 §5.1)
+    let max_age = hickory_proto::op::Message::from_bytes(&response)
+        .ok()
+        .map(|msg| {
+            msg.answers()
+                .iter()
+                .chain(msg.name_servers().iter())
+                .map(|r| r.ttl())
+                .min()
+                // For locally-synthesized responses with no records (blocked NXDOMAIN/REFUSED,
+                // IPv6-suppressed empty), use a reasonable TTL instead of 0 to avoid
+                // forcing clients to re-query on every request.
+                .unwrap_or(300)
         })
-        .unwrap_or_else(|| "doh-client".to_string())
+        .unwrap_or(0);
+
+    // RFC 8484 §5.1: set max-age to minimum TTL from answer/authority sections
+    let cache_control = format!("max-age={}", max_age);
+
+    (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, "application/dns-message".to_string()),
+            (header::CACHE_CONTROL, cache_control),
+        ],
+        response,
+    )
+        .into_response()
+}
+
+fn extract_client_ip(req: &axum::extract::Request) -> String {
+    // Use actual peer address from TCP connection.
+    // X-Forwarded-For is NOT trusted because any client can set it to spoof their IP
+    // without a trusted proxy verification mechanism.
+    if let Some(addr) = req.extensions().get::<std::net::SocketAddr>() {
+        return addr.ip().to_string();
+    }
+    "doh-client".to_string()
 }

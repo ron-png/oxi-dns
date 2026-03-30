@@ -3,7 +3,7 @@ name = "oxi-hole"
 version = "0.3.2"
 edition = "2021"
 description = "An AdGuardHome-style DNS sinkhole server written in Rust with DoT, DoH, and DoQ support"
-license = "MIT"
+license = "AGPL-3.0-only"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
