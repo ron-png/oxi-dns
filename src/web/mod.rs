@@ -979,6 +979,12 @@ async fn api_add_blocklist_source(
     Json(req): Json<UrlRequest>,
 ) -> Result<Json<BlocklistAddResponse>, Response> {
     require_permission(&user, Permission::ManageBlocklists)?;
+    if !req.url.starts_with("http://") && !req.url.starts_with("https://") {
+        return Ok(Json(BlocklistAddResponse {
+            success: false,
+            message: "Only http:// and https:// URLs are allowed".to_string(),
+        }));
+    }
     match state.blocklist.add_blocklist_source(&req.url).await {
         Ok(count) => {
             info!("Added blocklist source: {} ({} entries)", req.url, count);

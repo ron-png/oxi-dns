@@ -1744,7 +1744,7 @@
                 const tbody = document.getElementById('usersBody');
                 tbody.innerHTML = users.map(u => {
                     const isSelf = currentUser && u.id === currentUser.id;
-                    const perms = (u.permissions || []).map(p => `<span class="perm-badge">${p}</span>`).join('');
+                    const perms = (u.permissions || []).map(p => `<span class="perm-badge">${escapeHtml(p)}</span>`).join('');
                     const created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
                     const statusBadge = u.is_active
                         ? '<span class="badge allowed">Active</span>'
@@ -1972,7 +1972,7 @@
                 const tokens = await res.json();
                 const tbody = document.getElementById('tokensBody');
                 tbody.innerHTML = tokens.map(t => {
-                    const perms = (t.permissions || []).map(p => `<span class="perm-badge">${p}</span>`).join('');
+                    const perms = (t.permissions || []).map(p => `<span class="perm-badge">${escapeHtml(p)}</span>`).join('');
                     const created = t.created_at ? new Date(t.created_at).toLocaleDateString() : '-';
                     const lastUsed = t.last_used_at ? new Date(t.last_used_at).toLocaleDateString() : 'never';
                     const expires = t.expires_at ? new Date(t.expires_at).toLocaleDateString() : 'never';
@@ -2924,7 +2924,7 @@
             if (!str) return '';
             const div = document.createElement('div');
             div.textContent = str;
-            return div.innerHTML;
+            return div.innerHTML.replace(/'/g, '&#39;');
         }
 
         function createLogRow(e) {
