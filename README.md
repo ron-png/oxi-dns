@@ -229,7 +229,7 @@ Bug reports, feature requests, and pull requests are welcome. Open an issue on G
 
 ## TODO/PLANS
 
-Please note that this list is not a promise.
+Please note that this list is not a promise, rather thoughts I might change my mind on in the future. Feel free to share your opinion and suggestions for the future of this project.
 
 ### Goals for Version 1:
 - verify that every feature on the WebUI works as expected
