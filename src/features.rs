@@ -82,7 +82,7 @@ impl FeatureManager {
             },
             FeatureDefinition {
                 id: "youtube_safe_search".to_string(),
-                name: "YouTube Safe Search".to_string(),
+                name: "YouTube Restricted Mode".to_string(),
                 description: "Enforces YouTube restricted mode via DNS rewriting.".to_string(),
                 icon: "search".to_string(),
                 blocklist_url: None, // Handled via DNS rewriting, not blocklist
