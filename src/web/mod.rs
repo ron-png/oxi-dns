@@ -127,7 +127,7 @@ async fn security_headers_middleware(
     headers.insert(
         axum::http::header::CONTENT_SECURITY_POLICY,
         format!(
-            "default-src 'self'; script-src 'self' 'nonce-{}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
+            "default-src 'self'; script-src 'self' 'unsafe-inline' 'nonce-{}'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'",
             nonce
         ).parse().unwrap(),
     );
