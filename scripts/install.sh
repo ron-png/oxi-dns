@@ -277,19 +277,39 @@ get_latest_version() {
     log_verbose "Fetching latest release version (channel: ${CHANNEL})..."
 
     if [ "$CHANNEL" = "development" ]; then
-        # Fetch all releases and pick the highest version (GitHub orders by creation date, not version)
-        RELEASE_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases"
-        VERSION=$(download_to_stdout "$RELEASE_URL" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/' | sort -V | tail -n 1)
+        # Fetch all releases (with pagination) and pick the highest version.
+        # GitHub orders by creation date, not version number, so we must sort.
+        RELEASE_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=100"
+        ALL_TAGS=$(download_to_stdout "$RELEASE_URL" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+
+        # Use sort -V if available, otherwise fall back to numeric sort
+        if printf 'v0.1\nv0.2\n' | sort -V >/dev/null 2>&1; then
+            VERSION=$(echo "$ALL_TAGS" | sort -V | tail -n 1)
+        else
+            # Strip v prefix, strip -dev suffix, sort numerically by dot-separated parts
+            VERSION=$(echo "$ALL_TAGS" | while read -r tag; do
+                clean=$(echo "$tag" | sed 's/^v//; s/-dev$//')
+                printf "%s\t%s\n" "$clean" "$tag"
+            done | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -n 1 | cut -f2)
+        fi
     else
         RELEASE_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases/latest"
-        VERSION=$(download_to_stdout "$RELEASE_URL" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/')
+        VERSION=$(download_to_stdout "$RELEASE_URL" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
     fi
 
     # Fallback to pre-releases if no stable release exists
     if [ -z "$VERSION" ]; then
         log_warn "No release found for channel '${CHANNEL}'. Falling back to newest available..."
-        RELEASE_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases"
-        VERSION=$(download_to_stdout "$RELEASE_URL" | grep '"tag_name"' | sed -E 's/.*"tag_name":\s*"([^"]+)".*/\1/' | sort -V | tail -n 1)
+        RELEASE_URL="https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/releases?per_page=100"
+        ALL_TAGS=$(download_to_stdout "$RELEASE_URL" | grep '"tag_name"' | sed -E 's/.*"tag_name":[[:space:]]*"([^"]+)".*/\1/')
+        if printf 'v0.1\nv0.2\n' | sort -V >/dev/null 2>&1; then
+            VERSION=$(echo "$ALL_TAGS" | sort -V | tail -n 1)
+        else
+            VERSION=$(echo "$ALL_TAGS" | while read -r tag; do
+                clean=$(echo "$tag" | sed 's/^v//; s/-dev$//')
+                printf "%s\t%s\n" "$clean" "$tag"
+            done | sort -t. -k1,1n -k2,2n -k3,3n -k4,4n | tail -n 1 | cut -f2)
+        fi
     fi
 
     if [ -z "$VERSION" ]; then
