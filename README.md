@@ -72,7 +72,7 @@ If any step fails, the old binary keeps running and the failure is reported in t
 
 ### Web Dashboard
 
-Available at `http://<host>:8080`:
+Available at `http://<host>:9853`:
 
 - Real-time query stats (total, blocked, block rate)
 - Searchable query log with status/domain/client filters
@@ -82,11 +82,12 @@ Available at `http://<host>:8080`:
 - Update status and manual trigger
 - All changes take effect immediately — no restart needed
 
-### Query Logging
+### Query Logging & Statistics
 
-- SQLite-backed persistent log (WAL mode)
+- SQLite-backed persistent query log (WAL mode) — configurable retention (default 7 days)
+- Separate persistent statistics database — hourly aggregates and top domains (default 90 days)
 - Search by domain, client IP, status, block source, feature, upstream
-- Configurable retention (1–90 days, hourly purge)
+- Historical stats API: time-series charts, top queried/blocked domains, summaries
 - Optional client IP anonymization
 
 ## Installation
@@ -103,15 +104,22 @@ Installs the binary to `/opt/oxi-dns/`, config to `/etc/oxi-dns/config.toml`, an
 
 | Flag | Description |
 |------|-------------|
-| `-c <channel>` | Release channel: `stable` (default), `beta`, `edge` |
-| `-r` | Reinstall (fresh) |
-| `-U` | Update binary only (preserves config) |
-| `-u` | Uninstall |
+| `-c <channel>` | Release channel: `stable` (default) or `development` (pre-releases). `beta` and `edge` are accepted as aliases for `development`. |
+| `-r` | Reinstall — purge all files and install fresh |
+| `-U` | Update — download latest binary and restart service (preserves config) |
+| `-u` | Uninstall Oxi-DNS |
 | `-v` | Verbose output |
+| `-h` | Show help message |
 
-Example — install from the beta channel:
+`-r`, `-u`, and `-U` are mutually exclusive.
+
+During a fresh install, the script interactively prompts for:
+- **Web dashboard port** (default 9853)
+- **DNS mode** (when systemd-resolved is detected): replace systemd-resolved or run alongside it on a different address/port
+
+Example — install from the development channel:
 ```bash
-curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/master/scripts/install.sh" | sh -s -- -c beta
+curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/master/scripts/install.sh" | sh -s -- -c development
 ```
 
 ### Docker / Podman
@@ -123,7 +131,7 @@ docker run -d \
   --name oxi-dns \
   -p 53:53/udp \
   -p 53:53/tcp \
-  -p 8080:8080 \
+  -p 9853:9853 \
   -v oxi-dns-config:/etc/oxi-dns \
   ghcr.io/ron-png/oxi-dns:latest
 ```
@@ -139,7 +147,7 @@ services:
     ports:
       - "53:53/udp"
       - "53:53/tcp"
-      - "8080:8080"
+      - "9853:9853"
       # Uncomment for encrypted DNS:
       # - "853:853/tcp"   # DoT
       # - "443:443/tcp"   # DoH
@@ -157,30 +165,50 @@ Default config (`config.toml`):
 
 ```toml
 [dns]
-listen = ["0.0.0.0:53", "[::]:53"]
+listen = "0.0.0.0:53"
 upstreams = [
     "tls://9.9.9.10:853",
     "tls://149.112.112.10:853",
 ]
 
 [web]
-listen = ["0.0.0.0:8080", "[::]:8080"]
+listen = "0.0.0.0:9853"
 ```
 
 Most settings are configurable at runtime through the web dashboard. The full set of config sections:
 
 | Section | Key settings |
 |---------|-------------|
-| `[dns]` | `listen`, `dot_listen`, `doh_listen`, `doq_listen`, `upstreams`, `timeout_ms` |
-| `[web]` | `listen` |
+| `[dns]` | `listen`, `dot_listen`, `doh_listen`, `doq_listen`, `upstreams`, `timeout_ms`, `cache_enabled` |
+| `[web]` | `listen`, `https_listen` (optional, enables HTTPS for dashboard) |
 | `[blocking]` | `enabled`, `blocklists`, `custom_blocked`, `allowlist`, `blocking_mode`, `update_interval_minutes`, `enabled_features` |
 | `[tls]` | `cert_path`, `key_path` (auto-generates self-signed if omitted) |
-| `[system]` | `auto_update`, `ipv6_enabled` |
-| `[log]` | `retention_days`, `anonymize_client_ip` |
+| `[system]` | `auto_update`, `ipv6_enabled`, `release_channel` |
+| `[log]` | `query_log_retention_days`, `stats_retention_days`, `anonymize_client_ip` |
 
 Upstream formats: `udp://`, `tls://`, `https://`, `quic://` — defaults to UDP if no prefix.
 
+## Reconfigure
+
+Change network listen addresses from the command line (requires root):
+
+```bash
+sudo oxi-dns --reconfigure dns.listen=0.0.0.0:5353
+sudo oxi-dns --reconfigure web.listen=0.0.0.0:3000
+sudo oxi-dns --reconfigure dns.listen=0.0.0.0:53 dns.dot_listen=0.0.0.0:853
+```
+
+Handles systemd-resolved automatically when switching to/from port 53. The dashboard also generates these commands for you when you edit network settings.
+
 ## Uninstall
+
+A standalone uninstall script is installed alongside the binary at `/opt/oxi-dns/uninstall.sh`. It works offline with no network access required:
+
+```bash
+sudo /opt/oxi-dns/uninstall.sh
+```
+
+Alternatively, via the install script:
 
 ```bash
 curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/master/scripts/install.sh" | sh -s -- -u
