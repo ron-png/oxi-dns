@@ -289,7 +289,6 @@
         <div class="steps">
             <div class="dot" id="dot-1"></div>
             <div class="dot" id="dot-2"></div>
-            <div class="dot" id="dot-3"></div>
         </div>
 
         <div class="card">
@@ -322,24 +321,6 @@
             </div>
 
             <div class="step" id="step-2">
-                <h2>Your Configuration</h2>
-                <p class="desc">Configured during installation. Change these from the dashboard later.</p>
-                <div id="config-info">
-                    <div class="info-row"><span class="label">DNS Server</span><span class="value" id="info-dns">—</span></div>
-                    <div class="info-row"><span class="label">Web Dashboard</span><span class="value" id="info-web">—</span></div>
-                    <div class="info-row"><span class="label">Server IP</span><span class="value" id="info-ip">—</span></div>
-                </div>
-                <div class="tip">
-                    <strong>Next step:</strong> Point your devices' DNS to <strong id="tip-ip">—</strong> to start blocking ads.
-                </div>
-                <div class="btn-row">
-                    <div></div>
-                    <button class="btn btn-skip" onclick="window.location.href='/'">Skip to dashboard</button>
-                    <button class="btn btn-primary" onclick="goStep(3)">Next</button>
-                </div>
-            </div>
-
-            <div class="step" id="step-3">
                 <div class="done-icon">&#10003;</div>
                 <div class="done-text">
                     <h2>You're All Set!</h2>
@@ -350,8 +331,11 @@
                     <div class="info-row"><span class="label">DNS</span><span class="value" id="sum-dns">—</span></div>
                     <div class="info-row"><span class="label">Dashboard</span><span class="value" id="sum-dash">—</span></div>
                 </div>
+                <div class="tip">
+                    <strong>Next step:</strong> Point your devices' DNS to <strong id="tip-ip">—</strong> to start blocking ads.
+                </div>
                 <div class="btn-row">
-                    <button class="btn btn-back" onclick="goStep(2)">Back</button>
+                    <div></div>
                     <button class="btn btn-primary" onclick="window.location.href='/'">Open Dashboard</button>
                 </div>
             </div>
@@ -359,12 +343,9 @@
     </div>
 
     <script>
-        let currentStep = 1;
-        let setupInfo = {};
         let adminUsername = '';
 
         function goStep(n) {
-            currentStep = n;
             document.querySelectorAll('.step').forEach(s => s.classList.remove('active'));
             document.getElementById('step-' + n).classList.add('active');
             document.querySelectorAll('.dot').forEach((d, i) => {
@@ -373,29 +354,22 @@
                 if (i + 1 === n) d.classList.add('active');
             });
 
-            if (n === 2) loadSetupInfo();
-            if (n === 3) populateSummary();
+            if (n === 2) loadSummary();
         }
 
-        async function loadSetupInfo() {
+        async function loadSummary() {
+            document.getElementById('sum-user').textContent = adminUsername || '—';
             try {
                 const res = await fetch('/api/system/setup-info');
                 if (res.ok) {
-                    setupInfo = await res.json();
-                    document.getElementById('info-dns').textContent = setupInfo.dns_listen || '—';
-                    document.getElementById('info-web').textContent = setupInfo.web_listen || '—';
-                    document.getElementById('info-ip').textContent = setupInfo.server_ip || '—';
-                    document.getElementById('tip-ip').textContent = setupInfo.server_ip || '—';
+                    const info = await res.json();
+                    document.getElementById('sum-dns').textContent = info.dns_listen || '—';
+                    const ip = info.server_ip || window.location.hostname;
+                    const port = (info.web_listen || '').split(':').pop() || '9853';
+                    document.getElementById('sum-dash').textContent = 'http://' + ip + ':' + port;
+                    document.getElementById('tip-ip').textContent = info.server_ip || '—';
                 }
             } catch (_) {}
-        }
-
-        function populateSummary() {
-            document.getElementById('sum-user').textContent = adminUsername || '—';
-            document.getElementById('sum-dns').textContent = setupInfo.dns_listen || '—';
-            const ip = setupInfo.server_ip || window.location.hostname;
-            const port = (setupInfo.web_listen || '').split(':').pop() || '9853';
-            document.getElementById('sum-dash').textContent = 'http://' + ip + ':' + port;
         }
 
         const errorEl = document.getElementById('error-msg');
