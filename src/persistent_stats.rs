@@ -4,7 +4,7 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::path::Path;
 use std::sync::{Arc, Mutex};
-use tracing::{info, warn};
+use tracing::info;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HourlyStat {
@@ -343,19 +343,6 @@ impl PersistentStats {
         Ok(deleted)
     }
 
-    /// Spawn a background task that flushes the buffer every 60 seconds.
-    pub fn spawn_flush_task(&self) {
-        let stats = self.clone();
-        tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
-            loop {
-                interval.tick().await;
-                if let Err(e) = stats.flush().await {
-                    warn!("Failed to flush persistent stats: {}", e);
-                }
-            }
-        });
-    }
 }
 
 #[cfg(test)]

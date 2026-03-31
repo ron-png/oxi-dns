@@ -48,22 +48,7 @@ impl From<anyhow::Error> for ParseError {
     }
 }
 
-/// Detect whether `data` is a binary PKCS12 bundle (vs PEM text).
-pub fn is_pkcs12(data: &[u8]) -> bool {
-    // PEM files are ASCII text; PKCS12 is DER-encoded ASN.1.
-    // A quick heuristic: PEM starts with "-----BEGIN", PKCS12 doesn't and
-    // contains non-UTF8 or binary content. Also check for the ASN.1 SEQUENCE
-    // tag (0x30) which is typical for DER-encoded PKCS12.
-    if data.len() < 4 {
-        return false;
-    }
-    // If it looks like PEM text, it's not PKCS12
-    if data.starts_with(b"-----BEGIN") {
-        return false;
-    }
-    // PKCS12/PFX files start with ASN.1 SEQUENCE tag
-    data[0] == 0x30
-}
+
 
 /// Parse PEM certificate data from one or two byte slices.
 ///
@@ -364,20 +349,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn is_pkcs12_detects_binary() {
-        // PEM text should not be detected as PKCS12
-        assert!(!is_pkcs12(b"-----BEGIN CERTIFICATE-----\n"));
-
-        // Binary data starting with ASN.1 SEQUENCE tag
-        assert!(is_pkcs12(&[0x30, 0x82, 0x01, 0x00, 0x02, 0x01]));
-
-        // Too short
-        assert!(!is_pkcs12(&[0x30]));
-
-        // Empty
-        assert!(!is_pkcs12(&[]));
-    }
 
     #[test]
     fn extract_cert_info_works() {

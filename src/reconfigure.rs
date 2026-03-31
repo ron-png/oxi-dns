@@ -114,7 +114,7 @@ fn is_port53_local(addr: &str) -> bool {
     if port != "53" {
         return false;
     }
-    let host = addr.rsplitn(2, ':').nth(1).unwrap_or("");
+    let host = addr.rsplit_once(':').map(|(h, _)| h).unwrap_or("");
     matches!(host, "0.0.0.0" | "127.0.0.1" | "" | "[::]" | "[::1]")
 }
 
