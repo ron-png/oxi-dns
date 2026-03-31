@@ -572,6 +572,16 @@ mod tests {
         assert!(version_newer("0.4.0.6", "0.4.0.4"));
         assert!(!version_newer("0.4.0.4", "0.4.0.4"));
         assert!(!version_newer("0.4.0.3", "0.4.0.4"));
+        // Multi-digit version parts (10+, 100+)
+        assert!(version_newer("0.4.0.10", "0.4.0.9"));
+        assert!(version_newer("0.4.0.100", "0.4.0.99"));
+        assert!(version_newer("0.4.0.111", "0.4.0.110"));
+        assert!(version_newer("0.4.10", "0.4.9"));
+        assert!(version_newer("0.4.100", "0.4.99"));
+        assert!(version_newer("0.4.111", "0.4.110"));
+        // Ensure numeric, not lexicographic (10 > 9, not "10" < "9")
+        assert!(version_newer("0.4.0.10", "0.4.0.2"));
+        assert!(version_newer("0.4.10", "0.4.2"));
     }
 
     #[test]
