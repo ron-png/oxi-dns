@@ -3409,7 +3409,7 @@
                     // After 120s give up polling
                     if (Date.now() - startTime > 120000) {
                         clearInterval(poll);
-                        msg.textContent = 'Update timed out — check server logs';
+                        msg.textContent = 'Update timed out — the server may still be restarting. Refresh the page in a moment.';
                         msg.style.color = 'var(--color-red)';
                         btn.style.display = 'inline-block';
                         btn.disabled = false;
