@@ -237,6 +237,7 @@ Please note that this list is not a promise, rather thoughts I might change my m
 
 ### Goals for Version 1:
 - verify that every feature on the WebUI works as expected
+  - fix weird bug when trying to open openvsx.eclipsecontent.org
   - Verify that the logs are deleted properly (feature)
   - Verify client IP anonymization (feature)
   - delete unnecessary files/lines of code (chores)
