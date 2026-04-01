@@ -7,6 +7,10 @@ Supports plain DNS (UDP), DNS-over-TLS (DoT), DNS-over-HTTPS (DoH), and DNS-over
 > [!CAUTION]
 > **Early alpha** — under active development. Some features are not tested yet. Expect rough edges.
 
+
+<img width="946" height="884" alt="SCR-20260401-olkk" src="https://github.com/user-attachments/assets/326ddda3-b1e8-48db-abc6-61672a6cadc6" />
+
+
 ## Why Oxi-DNS?
 
 - **Single binary, zero dependencies** — no Python, no PHP, no database server to maintain
