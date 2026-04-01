@@ -7,7 +7,9 @@
     <title>Oxi-DNS Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+    <link
+        href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500&family=JetBrains+Mono:wght@300;400;500;600&display=swap"
+        rel="stylesheet">
     <style>
         :root {
             --accent: #00d4aa;
@@ -1026,82 +1028,300 @@
             white-space: nowrap;
         }
 
-        .network-settings { margin-bottom: 24px; }
-        .network-settings h3 { font-size: 15px; margin-bottom: 12px; color: var(--text-primary); }
-        .network-field { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
-        .network-field label { width: 140px; font-size: 13px; color: var(--text-secondary); flex-shrink: 0; }
-        .network-field input {
-            flex: 1; background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px;
-            padding: 7px 10px; font-size: 13px; font-family: var(--font-mono, monospace);
-            color: var(--text-primary); outline: none; transition: border-color 0.15s;
+        .network-settings {
+            margin-bottom: 24px;
         }
-        .network-field input:focus { border-color: var(--accent); }
-        .network-field input::placeholder { color: var(--text-muted); font-family: var(--font-sans); font-style: italic; }
-        .network-field .proto-toggle { display: flex; align-items: center; gap: 8px; }
-        .network-field .proto-toggle label.toggle-switch { flex-shrink: 0; }
-        .network-field .proto-toggle input[type="text"] { flex: 1; }
+
+        .network-settings h3 {
+            font-size: 15px;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .network-field {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 8px;
+        }
+
+        .network-field label {
+            width: 140px;
+            font-size: 13px;
+            color: var(--text-secondary);
+            flex-shrink: 0;
+        }
+
+        .network-field input {
+            flex: 1;
+            background: var(--bg-page);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 13px;
+            font-family: var(--font-mono, monospace);
+            color: var(--text-primary);
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .network-field input:focus {
+            border-color: var(--accent);
+        }
+
+        .network-field input::placeholder {
+            color: var(--text-muted);
+            font-family: var(--font-sans);
+            font-style: italic;
+        }
+
+        .network-field .proto-toggle {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .network-field .proto-toggle label.toggle-switch {
+            flex-shrink: 0;
+        }
+
+        .network-field .proto-toggle input[type="text"] {
+            flex: 1;
+        }
+
         .network-field .proto-toggle input[type="text"]:disabled {
-            opacity: 0.4; cursor: not-allowed;
+            opacity: 0.4;
+            cursor: not-allowed;
         }
 
         .reconfig-banner {
-            margin-top: 16px; padding: 14px 16px;
-            background: rgba(234, 179, 8, 0.06); border: 1px solid rgba(234, 179, 8, 0.2);
-            border-radius: 8px; display: none;
+            margin-top: 16px;
+            padding: 14px 16px;
+            background: rgba(234, 179, 8, 0.06);
+            border: 1px solid rgba(234, 179, 8, 0.2);
+            border-radius: 8px;
+            display: none;
         }
-        .reconfig-banner.visible { display: block; }
-        .reconfig-banner .banner-title { font-size: 13px; font-weight: 600; color: #eab308; margin-bottom: 8px; }
-        .reconfig-banner .banner-desc { font-size: 12px; color: var(--text-secondary); margin-bottom: 10px; }
+
+        .reconfig-banner.visible {
+            display: block;
+        }
+
+        .reconfig-banner .banner-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #eab308;
+            margin-bottom: 8px;
+        }
+
+        .reconfig-banner .banner-desc {
+            font-size: 12px;
+            color: var(--text-secondary);
+            margin-bottom: 10px;
+        }
+
         .reconfig-banner .banner-cmd {
-            background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px;
-            padding: 10px 12px; font-family: var(--font-mono, monospace); font-size: 13px;
-            color: var(--text-primary); word-break: break-all; margin-bottom: 10px;
+            background: var(--bg-page);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-family: var(--font-mono, monospace);
+            font-size: 13px;
+            color: var(--text-primary);
+            word-break: break-all;
+            margin-bottom: 10px;
         }
-        .reconfig-banner .banner-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+        .reconfig-banner .banner-actions {
+            display: flex;
+            gap: 8px;
+            justify-content: flex-end;
+        }
+
         .reconfig-banner .banner-actions button {
-            padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; border: none;
+            padding: 5px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            border: none;
         }
-        .reconfig-btn-copy { background: #eab308; color: #000; font-weight: 500; }
-        .reconfig-btn-copy:hover { background: #facc15; }
-        .reconfig-btn-dismiss { background: transparent; color: var(--text-muted); border: 1px solid var(--border) !important; }
-        .reconfig-btn-dismiss:hover { color: var(--text-secondary); }
+
+        .reconfig-btn-copy {
+            background: #eab308;
+            color: #000;
+            font-weight: 500;
+        }
+
+        .reconfig-btn-copy:hover {
+            background: #facc15;
+        }
+
+        .reconfig-btn-dismiss {
+            background: transparent;
+            color: var(--text-muted);
+            border: 1px solid var(--border) !important;
+        }
+
+        .reconfig-btn-dismiss:hover {
+            color: var(--text-secondary);
+        }
+
         .channel-warning {
-            margin-top: 10px; padding: 10px 14px;
-            background: rgba(234, 179, 8, 0.06); border: 1px solid rgba(234, 179, 8, 0.2);
-            border-radius: 8px; font-size: 12px; color: #eab308; line-height: 1.5; display: none;
+            margin-top: 10px;
+            padding: 10px 14px;
+            background: rgba(234, 179, 8, 0.06);
+            border: 1px solid rgba(234, 179, 8, 0.2);
+            border-radius: 8px;
+            font-size: 12px;
+            color: #eab308;
+            line-height: 1.5;
+            display: none;
         }
-        .channel-warning.visible { display: block; }
+
+        .channel-warning.visible {
+            display: block;
+        }
+
         /* .channel-select styling now handled by global select rules */
 
-        .tls-section { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border); }
-        .tls-section h3 { font-size: 15px; margin-bottom: 12px; color: var(--text-primary); }
-        .tls-status { padding: 12px 14px; background: var(--bg-page); border-radius: 8px; margin-bottom: 12px; }
-        .tls-status .tls-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.5px; }
-        .tls-status .tls-value { font-size: 14px; color: var(--text-primary); margin-top: 2px; }
-        .tls-status-row { display: flex; gap: 16px; flex-wrap: wrap; }
-        .tls-status-item { flex: 1; min-width: 120px; }
-        .tls-upload { margin-top: 12px; }
-        .tls-tabs { display: flex; gap: 4px; margin-bottom: 12px; }
+        .tls-section {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid var(--border);
+        }
+
+        .tls-section h3 {
+            font-size: 15px;
+            margin-bottom: 12px;
+            color: var(--text-primary);
+        }
+
+        .tls-status {
+            padding: 12px 14px;
+            background: var(--bg-page);
+            border-radius: 8px;
+            margin-bottom: 12px;
+        }
+
+        .tls-status .tls-label {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .tls-status .tls-value {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-top: 2px;
+        }
+
+        .tls-status-row {
+            display: flex;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+
+        .tls-status-item {
+            flex: 1;
+            min-width: 120px;
+        }
+
+        .tls-upload {
+            margin-top: 12px;
+        }
+
+        .tls-tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+        }
+
         .tls-tab {
-            padding: 6px 14px; border-radius: 6px; font-size: 12px; cursor: pointer;
-            border: 1px solid var(--border); background: transparent; color: var(--text-muted);
+            padding: 6px 14px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            background: transparent;
+            color: var(--text-muted);
         }
-        .tls-tab.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-        .tls-file-input { margin-bottom: 8px; }
-        .tls-file-input label { font-size: 12px; color: var(--text-secondary); display: block; margin-bottom: 4px; }
-        .tls-file-input input[type="file"] { font-size: 13px; color: var(--text-secondary); }
-        .tls-password { margin-bottom: 10px; display: none; }
-        .tls-password.visible { display: block; }
+
+        .tls-tab.active {
+            border-color: var(--accent);
+            color: var(--accent);
+            background: var(--accent-dim);
+        }
+
+        .tls-file-input {
+            margin-bottom: 8px;
+        }
+
+        .tls-file-input label {
+            font-size: 12px;
+            color: var(--text-secondary);
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .tls-file-input input[type="file"] {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .tls-password {
+            margin-bottom: 10px;
+            display: none;
+        }
+
+        .tls-password.visible {
+            display: block;
+        }
+
         .tls-password input {
-            width: 100%; background: var(--bg-page); border: 1px solid var(--border); border-radius: 6px;
-            padding: 7px 10px; font-size: 13px; color: var(--text-primary); outline: none;
+            width: 100%;
+            background: var(--bg-page);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 13px;
+            color: var(--text-primary);
+            outline: none;
         }
-        .tls-password input:focus { border-color: var(--accent); }
-        .tls-actions { display: flex; gap: 8px; margin-top: 10px; }
-        .tls-msg { margin-top: 10px; font-size: 13px; padding: 8px 12px; border-radius: 6px; display: none; }
-        .tls-msg.visible { display: block; }
-        .tls-msg.success { background: rgba(34,197,94,0.08); color: #22c55e; border: 1px solid rgba(34,197,94,0.2); }
-        .tls-msg.error { background: rgba(248,113,113,0.08); color: #f87171; border: 1px solid rgba(248,113,113,0.25); }
+
+        .tls-password input:focus {
+            border-color: var(--accent);
+        }
+
+        .tls-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .tls-msg {
+            margin-top: 10px;
+            font-size: 13px;
+            padding: 8px 12px;
+            border-radius: 6px;
+            display: none;
+        }
+
+        .tls-msg.visible {
+            display: block;
+        }
+
+        .tls-msg.success {
+            background: rgba(34, 197, 94, 0.08);
+            color: #22c55e;
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .tls-msg.error {
+            background: rgba(248, 113, 113, 0.08);
+            color: #f87171;
+            border: 1px solid rgba(248, 113, 113, 0.25);
+        }
 
         .logs-settings {
             display: flex;
@@ -1203,7 +1423,7 @@
             border-radius: 8px;
             overflow: hidden;
             z-index: 200;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
         }
 
         .user-menu-dropdown.open {
@@ -1261,7 +1481,7 @@
             left: 0;
             right: 0;
             bottom: 0;
-            background: rgba(0,0,0,0.6);
+            background: rgba(0, 0, 0, 0.6);
             z-index: 300;
             align-items: center;
             justify-content: center;
@@ -1395,7 +1615,8 @@
             color: var(--accent);
         }
 
-        .user-actions, .token-actions {
+        .user-actions,
+        .token-actions {
             display: flex;
             gap: 4px;
         }
@@ -1427,7 +1648,7 @@
             <h1>Oxi<span>-Hole</span></h1>
             <div class="header-right">
                 <div class="mode-toggle">
-                    <button id="modeSimple" class="active" onclick="setMode('simple')">Simple</button>
+                    <button id="modeSimple" class="active" onclick="setMode('simple')">Home</button>
                     <button id="modeLogs" onclick="setMode('logs')">Logs</button>
                     <button id="modeAdvanced" onclick="setMode('advanced')">Advanced</button>
                 </div>
@@ -1469,11 +1690,13 @@
         <!-- Stats (always visible) -->
         <div class="stats-grid">
             <div class="stat-card">
-                <div class="label" data-tooltip="Total number of DNS queries received since the server started.">Total Queries</div>
+                <div class="label" data-tooltip="Total number of DNS queries received since the server started.">Total
+                    Queries</div>
                 <div class="value" id="totalQueries">0</div>
             </div>
             <div class="stat-card">
-                <div class="label" data-tooltip="Number of queries that matched a blocklist and were blocked.">Blocked Queries</div>
+                <div class="label" data-tooltip="Number of queries that matched a blocklist and were blocked.">Blocked
+                    Queries</div>
                 <div class="value blocked" id="blockedQueries">0</div>
             </div>
             <div class="stat-card">
@@ -1481,13 +1704,18 @@
                 <div class="value pct" id="blockPct">0.0%</div>
             </div>
             <div class="stat-card">
-                <div class="label" data-tooltip="Total number of unique domains loaded from all active blocklists.">Domains on Blocklist</div>
+                <div class="label" data-tooltip="Total number of unique domains loaded from all active blocklists.">
+                    Domains on Blocklist</div>
                 <div class="value size" id="blocklistSize">0</div>
             </div>
             <div class="stat-card">
-                <div class="label" data-tooltip="Number of DNS responses currently stored in the cache to speed up repeat lookups.">Cache Size</div>
+                <div class="label"
+                    data-tooltip="Number of DNS responses currently stored in the cache to speed up repeat lookups.">
+                    Cache Size</div>
                 <div class="value size" id="cacheSize">0</div>
-                <div class="label" style="margin-top:10px;" data-tooltip="Percentage of queries answered from cache instead of forwarding to upstream DNS servers. Higher is better.">Hit Rate</div>
+                <div class="label" style="margin-top:10px;"
+                    data-tooltip="Percentage of queries answered from cache instead of forwarding to upstream DNS servers. Higher is better.">
+                    Hit Rate</div>
                 <div class="value pct" id="cacheHitRate">0.0%</div>
                 <button class="btn btn-danger btn-sm" style="margin-top:12px;" onclick="flushCache()">Flush
                     Cache</button>
@@ -1599,27 +1827,34 @@
                     <div class="network-field">
                         <label>DNS-over-TLS</label>
                         <div class="proto-toggle">
-                            <label class="toggle-switch"><input type="checkbox" id="toggle-dot" onchange="toggleProtocol('dot', this.checked)"><span class="toggle-slider"></span></label>
+                            <label class="toggle-switch"><input type="checkbox" id="toggle-dot"
+                                    onchange="toggleProtocol('dot', this.checked)"><span
+                                    class="toggle-slider"></span></label>
                             <input type="text" id="net-dot" placeholder="0.0.0.0:853" disabled>
                         </div>
                     </div>
                     <div class="network-field">
                         <label>DNS-over-HTTPS</label>
                         <div class="proto-toggle">
-                            <label class="toggle-switch"><input type="checkbox" id="toggle-doh" onchange="toggleProtocol('doh', this.checked)"><span class="toggle-slider"></span></label>
+                            <label class="toggle-switch"><input type="checkbox" id="toggle-doh"
+                                    onchange="toggleProtocol('doh', this.checked)"><span
+                                    class="toggle-slider"></span></label>
                             <input type="text" id="net-doh" placeholder="0.0.0.0:443" disabled>
                         </div>
                     </div>
                     <div class="network-field">
                         <label>DNS-over-QUIC</label>
                         <div class="proto-toggle">
-                            <label class="toggle-switch"><input type="checkbox" id="toggle-doq" onchange="toggleProtocol('doq', this.checked)"><span class="toggle-slider"></span></label>
+                            <label class="toggle-switch"><input type="checkbox" id="toggle-doq"
+                                    onchange="toggleProtocol('doq', this.checked)"><span
+                                    class="toggle-slider"></span></label>
                             <input type="text" id="net-doq" placeholder="0.0.0.0:853" disabled>
                         </div>
                     </div>
                     <div class="reconfig-banner" id="reconfigBanner">
                         <div class="banner-title">&#9888; System command required</div>
-                        <div class="banner-desc">This change requires root privileges. Run this command in your terminal:</div>
+                        <div class="banner-desc">This change requires root privileges. Run this command in your
+                            terminal:</div>
                         <div class="banner-cmd" id="reconfigCmd"></div>
                         <div class="banner-desc">The service will restart automatically.</div>
                         <div class="banner-actions">
@@ -1668,12 +1903,14 @@
                             </div>
                         </div>
                         <div class="tls-password" id="tlsPasswordField">
-                            <label style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Password</label>
+                            <label
+                                style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Password</label>
                             <input type="password" id="tlsPassword" placeholder="Certificate password">
                         </div>
                         <div class="tls-actions">
                             <button class="btn btn-sm" onclick="uploadTlsCert()">Upload</button>
-                            <button class="btn btn-sm" id="tlsRemoveBtn" onclick="removeTlsCert()" style="display:none;">Remove &amp; use self-signed</button>
+                            <button class="btn btn-sm" id="tlsRemoveBtn" onclick="removeTlsCert()"
+                                style="display:none;">Remove &amp; use self-signed</button>
                         </div>
                         <div class="tls-msg" id="tlsMsg"></div>
                     </div>
@@ -1882,7 +2119,8 @@
             <div class="section" id="tokensSection">
                 <h2>API Tokens</h2>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <span style="font-size: 13px; color: var(--text-muted);">Personal access tokens for API authentication</span>
+                    <span style="font-size: 13px; color: var(--text-muted);">Personal access tokens for API
+                        authentication</span>
                     <button class="btn btn-accent btn-sm" onclick="showCreateTokenModal()">Create Token</button>
                 </div>
                 <table>
@@ -2908,7 +3146,7 @@
                 document.getElementById('tlsSubject').textContent = data.subject || '\u2014';
                 document.getElementById('tlsExpiry').textContent = data.not_after || '\u2014';
                 document.getElementById('tlsRemoveBtn').style.display = data.self_signed ? 'none' : '';
-            } catch (_) {}
+            } catch (_) { }
         }
 
         function showTlsMsg(msg, type) {
@@ -3000,7 +3238,7 @@
                         input.value = '';
                     }
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         function toggleProtocol(proto, enabled) {
@@ -3038,7 +3276,7 @@
                 if (res.ok) {
                     setTimeout(refreshNetworkSettings, 3000);
                 }
-            } catch (_) {}
+            } catch (_) { }
         }
 
         function checkNetworkChanges() {
@@ -3113,7 +3351,7 @@
                 const data = await res.json();
                 document.getElementById('releaseChannelSelect').value = data.channel;
                 document.getElementById('channelWarning').classList.toggle('visible', data.channel === 'development');
-            } catch (_) {}
+            } catch (_) { }
         }
 
         async function setReleaseChannel(channel) {
@@ -3124,7 +3362,7 @@
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ channel }),
                 });
-            } catch (_) {}
+            } catch (_) { }
         }
 
         // ---- System Settings ----
@@ -3611,7 +3849,7 @@
                     fragment.appendChild(createLogRow(e));
                 }
                 tbody.replaceChildren(fragment);
-            } catch (_) {}
+            } catch (_) { }
         }
 
         async function refreshLogSettings() {
