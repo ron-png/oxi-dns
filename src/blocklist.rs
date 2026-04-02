@@ -219,38 +219,6 @@ impl BlocklistManager {
         Ok(domains)
     }
 
-    /// Check if a domain should be blocked.
-    #[allow(dead_code)]
-    pub async fn is_blocked(&self, domain: &str) -> bool {
-        if !*self.enabled.read().await {
-            return false;
-        }
-
-        let normalized = normalize_domain(domain);
-        let allowlist = self.allowlist.read().await;
-
-        if allowlist.contains(&normalized) {
-            return false;
-        }
-
-        let blocked = self.blocked.read().await;
-
-        if blocked.contains(&normalized) {
-            return true;
-        }
-
-        // Check parent domains
-        let parts: Vec<&str> = normalized.split('.').collect();
-        for i in 1..parts.len().saturating_sub(1) {
-            let parent = parts[i..].join(".");
-            if blocked.contains(&parent) {
-                return true;
-            }
-        }
-
-        false
-    }
-
     /// Check if a domain is blocked and return which source caused it.
     pub async fn check_domain(&self, domain: &str) -> BlockResult {
         if !*self.enabled.read().await {
@@ -1029,9 +997,9 @@ domain-only.example.com
     async fn test_is_blocked() {
         let mgr = BlocklistManager::new(true);
         mgr.load(&[], &["ads.example.com".to_string()], &[]).await;
-        assert!(mgr.is_blocked("ads.example.com").await);
-        assert!(mgr.is_blocked("sub.ads.example.com").await);
-        assert!(!mgr.is_blocked("example.com").await);
+        assert!(!matches!(mgr.check_domain("ads.example.com").await, BlockResult::Allowed));
+        assert!(!matches!(mgr.check_domain("sub.ads.example.com").await, BlockResult::Allowed));
+        assert!(matches!(mgr.check_domain("example.com").await, BlockResult::Allowed));
     }
 
     #[tokio::test]
@@ -1043,14 +1011,14 @@ domain-only.example.com
             &["ads.example.com".to_string()],
         )
         .await;
-        assert!(!mgr.is_blocked("ads.example.com").await);
+        assert!(matches!(mgr.check_domain("ads.example.com").await, BlockResult::Allowed));
     }
 
     #[tokio::test]
     async fn test_blocking_disabled() {
         let mgr = BlocklistManager::new(false);
         mgr.load(&[], &["ads.example.com".to_string()], &[]).await;
-        assert!(!mgr.is_blocked("ads.example.com").await);
+        assert!(matches!(mgr.check_domain("ads.example.com").await, BlockResult::Allowed));
     }
 
     #[tokio::test]
@@ -1058,13 +1026,13 @@ domain-only.example.com
         let mgr = BlocklistManager::new(true);
         mgr.load(&[], &["base.example.com".to_string()], &[]).await;
 
-        assert!(mgr.is_blocked("base.example.com").await);
+        assert!(!matches!(mgr.check_domain("base.example.com").await, BlockResult::Allowed));
         assert_eq!(mgr.blocked_count().await, 1);
 
         mgr.add_custom_blocked("new.example.com").await;
-        assert!(mgr.is_blocked("new.example.com").await);
+        assert!(!matches!(mgr.check_domain("new.example.com").await, BlockResult::Allowed));
 
         mgr.remove_custom_blocked("new.example.com").await;
-        assert!(!mgr.is_blocked("new.example.com").await);
+        assert!(matches!(mgr.check_domain("new.example.com").await, BlockResult::Allowed));
     }
 }

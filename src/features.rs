@@ -116,11 +116,6 @@ impl FeatureManager {
         self.features.read().await.clone()
     }
 
-    #[allow(dead_code)]
-    pub async fn is_safe_search_enabled(&self) -> bool {
-        *self.safe_search_enabled.read().await
-    }
-
     /// Toggle a feature on or off. If it has a blocklist, load/unload it.
     pub async fn set_feature(&self, feature_id: &str, enabled: bool) {
         // Update feature state and collect needed info while holding write lock

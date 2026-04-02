@@ -254,7 +254,7 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
         .collect();
 
     for _depth in 0..MAX_REFERRAL_DEPTH {
-        let query_packet = build_query(random_query_id(), &name, RecordType::A, false)?;
+        let query_packet = build_query(rand::random::<u16>(), &name, RecordType::A, false)?;
 
         // Try each server until one responds
         let mut resp = None;
@@ -285,7 +285,7 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
         // Also try AAAA if we got A records (or even if we didn't, to collect both)
         let mut all_addrs = addrs;
         {
-            let aaaa_packet = build_query(random_query_id(), &name, RecordType::AAAA, false)?;
+            let aaaa_packet = build_query(rand::random::<u16>(), &name, RecordType::AAAA, false)?;
             for server in &current_servers {
                 if let Ok(aaaa_resp) = udp_query(&aaaa_packet, *server, timeout).await {
                     for r in aaaa_resp.answers() {
@@ -578,11 +578,6 @@ impl UpstreamForwarder {
         before - self.cache.len()
     }
 
-    #[allow(dead_code)]
-    pub fn is_using_root_servers(&self) -> bool {
-        self.use_root_servers.load(Ordering::Relaxed)
-    }
-
     pub fn get_upstream_labels(&self) -> Vec<String> {
         self.upstreams
             .read()
@@ -651,7 +646,7 @@ impl UpstreamForwarder {
             format!("{}.", hostname)
         };
         let name = Name::from_ascii(&fqdn)?;
-        let packet = build_query(random_query_id(), &name, RecordType::A, true)?;
+        let packet = build_query(rand::random::<u16>(), &name, RecordType::A, true)?;
 
         let (response_bytes, _) = self.forward(&packet).await?;
         let response = hickory_proto::op::Message::from_bytes(&response_bytes)?;
@@ -934,7 +929,7 @@ impl UpstreamForwarder {
                 let start = labels.len() - qmin_depth;
                 let name_str = format!("{}.", labels[start..].join("."));
                 let name = Name::from_ascii(&name_str)?;
-                build_query(random_query_id(), &name, RecordType::NS, false)?
+                build_query(rand::random::<u16>(), &name, RecordType::NS, false)?
             };
 
             debug!(
@@ -1137,7 +1132,7 @@ impl UpstreamForwarder {
             .collect();
 
         for _depth in 0..MAX_REFERRAL_DEPTH {
-            let query_packet = build_query(random_query_id(), &name, RecordType::A, false)?;
+            let query_packet = build_query(rand::random::<u16>(), &name, RecordType::A, false)?;
 
             let (_resp_bytes, resp) =
                 match self.query_any_server(&query_packet, &current_servers).await {
@@ -1664,11 +1659,6 @@ fn build_query(
     msg.add_query(query);
 
     Ok(msg.to_vec()?)
-}
-
-/// Generate a random query ID using cryptographic randomness (RFC 5452).
-fn random_query_id() -> u16 {
-    rand::random::<u16>()
 }
 
 #[cfg(test)]

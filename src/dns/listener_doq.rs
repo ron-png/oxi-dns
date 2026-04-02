@@ -14,13 +14,6 @@ use tracing::{debug, error, info};
 const DOQ_NO_ERROR: quinn::VarInt = quinn::VarInt::from_u32(0x0);
 const DOQ_INTERNAL_ERROR: quinn::VarInt = quinn::VarInt::from_u32(0x1);
 const DOQ_PROTOCOL_ERROR: quinn::VarInt = quinn::VarInt::from_u32(0x2);
-#[allow(dead_code)]
-const DOQ_REQUEST_CANCELLED: quinn::VarInt = quinn::VarInt::from_u32(0x3);
-#[allow(dead_code)]
-const DOQ_EXCESSIVE_LOAD: quinn::VarInt = quinn::VarInt::from_u32(0x4);
-#[allow(dead_code)]
-const DOQ_UNSPECIFIED_ERROR: quinn::VarInt = quinn::VarInt::from_u32(0x5);
-
 fn bind_udp_reuse_port(addr: &str) -> anyhow::Result<std::net::UdpSocket> {
     use socket2::{Domain, Protocol, Socket, Type};
     let sock_addr: std::net::SocketAddr = addr.parse()?;
