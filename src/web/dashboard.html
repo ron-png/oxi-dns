@@ -1813,169 +1813,6 @@
         <!-- ==================== ADVANCED MODE ==================== -->
         <div id="panelAdvanced" class="panel">
             <div class="section">
-                <h2>System Settings</h2>
-                <div class="network-settings manage-system-only">
-                    <h3>Network</h3>
-                    <div class="network-field">
-                        <label>DNS Server</label>
-                        <input type="text" id="net-dns" placeholder="0.0.0.0:53" oninput="checkNetworkChanges()">
-                    </div>
-                    <div class="network-field">
-                        <label>Web Dashboard</label>
-                        <input type="text" id="net-web" placeholder="0.0.0.0:9853" oninput="checkNetworkChanges()">
-                    </div>
-                    <div class="network-field">
-                        <label>DNS-over-TLS</label>
-                        <div class="proto-toggle">
-                            <label class="toggle-switch"><input type="checkbox" id="toggle-dot"
-                                    onchange="toggleProtocol('dot', this.checked)"><span
-                                    class="toggle-slider"></span></label>
-                            <input type="text" id="net-dot" placeholder="0.0.0.0:853" disabled>
-                        </div>
-                    </div>
-                    <div class="network-field">
-                        <label>DNS-over-HTTPS</label>
-                        <div class="proto-toggle">
-                            <label class="toggle-switch"><input type="checkbox" id="toggle-doh"
-                                    onchange="toggleProtocol('doh', this.checked)"><span
-                                    class="toggle-slider"></span></label>
-                            <input type="text" id="net-doh" placeholder="0.0.0.0:443" disabled>
-                        </div>
-                    </div>
-                    <div class="network-field">
-                        <label>DNS-over-QUIC</label>
-                        <div class="proto-toggle">
-                            <label class="toggle-switch"><input type="checkbox" id="toggle-doq"
-                                    onchange="toggleProtocol('doq', this.checked)"><span
-                                    class="toggle-slider"></span></label>
-                            <input type="text" id="net-doq" placeholder="0.0.0.0:853" disabled>
-                        </div>
-                    </div>
-                    <div class="reconfig-banner" id="reconfigBanner">
-                        <div class="banner-title">&#9888; System command required</div>
-                        <div class="banner-desc">This change requires root privileges. Run this command in your
-                            terminal:</div>
-                        <div class="banner-cmd" id="reconfigCmd"></div>
-                        <div class="banner-desc">The service will restart automatically.</div>
-                        <div class="banner-actions">
-                            <button class="reconfig-btn-dismiss" onclick="dismissBanner()">Dismiss</button>
-                            <button class="reconfig-btn-copy" onclick="copyReconfigCmd()">Copy</button>
-                        </div>
-                    </div>
-                </div>
-                <div class="tls-section manage-system-only">
-                    <h3>TLS Certificate</h3>
-                    <div class="tls-status" id="tlsStatus">
-                        <div class="tls-status-row">
-                            <div class="tls-status-item">
-                                <div class="tls-label">Status</div>
-                                <div class="tls-value" id="tlsCertType">Loading...</div>
-                            </div>
-                            <div class="tls-status-item">
-                                <div class="tls-label">Subject</div>
-                                <div class="tls-value" id="tlsSubject">&mdash;</div>
-                            </div>
-                            <div class="tls-status-item">
-                                <div class="tls-label">Expires</div>
-                                <div class="tls-value" id="tlsExpiry">&mdash;</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="tls-upload">
-                        <div class="tls-tabs">
-                            <button class="tls-tab active" onclick="switchTlsTab('pem')">PEM</button>
-                            <button class="tls-tab" onclick="switchTlsTab('p12')">PKCS12</button>
-                        </div>
-                        <div id="tls-pem-fields">
-                            <div class="tls-file-input">
-                                <label>Certificate file (chain)</label>
-                                <input type="file" id="tlsCertFile" accept=".pem,.crt,.cer">
-                            </div>
-                            <div class="tls-file-input">
-                                <label>Private key file (optional if in cert file)</label>
-                                <input type="file" id="tlsKeyFile" accept=".pem,.key">
-                            </div>
-                        </div>
-                        <div id="tls-p12-fields" style="display:none;">
-                            <div class="tls-file-input">
-                                <label>PKCS12 file (.pfx / .p12)</label>
-                                <input type="file" id="tlsP12File" accept=".pfx,.p12">
-                            </div>
-                        </div>
-                        <div class="tls-password" id="tlsPasswordField">
-                            <label
-                                style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Password</label>
-                            <input type="password" id="tlsPassword" placeholder="Certificate password">
-                        </div>
-                        <div class="tls-actions">
-                            <button class="btn btn-sm" onclick="uploadTlsCert()">Upload</button>
-                            <button class="btn btn-sm" id="tlsRemoveBtn" onclick="removeTlsCert()"
-                                style="display:none;">Remove &amp; use self-signed</button>
-                        </div>
-                        <div class="tls-msg" id="tlsMsg"></div>
-                    </div>
-                </div>
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h3>Auto-Update Server</h3>
-                        <p class="warning">When enabled, oxi-dns automatically checks for updates every 8 hours. New
-                            versions are health-checked before being applied. If a health check fails, the
-                            current version continues running and a notification is shown.</p>
-                    </div>
-                    <label class="toggle-switch manage-system-only" id="toggle-autoupdate">
-                        <input type="checkbox" id="autoUpdateCheckbox" onchange="toggleAutoUpdate(this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div class="setting-row manage-system-only">
-                    <div class="setting-info">
-                        <h3>Release Channel</h3>
-                        <p>Choose which release channel to receive updates from.</p>
-                        <div class="channel-warning" id="channelWarning">
-                            &#9888; Development channel is not recommended for production use.
-                            You will receive untested pre-release builds that may contain bugs or breaking changes.
-                            Only use this for development or testing purposes.
-                        </div>
-                    </div>
-                    <select class="channel-select" id="releaseChannelSelect" onchange="setReleaseChannel(this.value)">
-                        <option value="stable">Stable</option>
-                        <option value="development">Development</option>
-                    </select>
-                </div>
-                <div class="setting-row">
-                    <div class="setting-info">
-                        <h3>IPv6 (AAAA)</h3>
-                        <p>Include IPv6 records in DNS responses. Disable on IPv4-only networks to prevent
-                            clients from attempting unreachable IPv6 connections.</p>
-                    </div>
-                    <label class="toggle-switch manage-system-only" id="toggle-ipv6">
-                        <input type="checkbox" id="ipv6Checkbox" onchange="toggleIpv6(this.checked)">
-                        <span class="toggle-slider"></span>
-                    </label>
-                </div>
-                <div class="version-box">
-                    <div class="version-row">
-                        <div class="version-info">
-                            <span>Version: </span>
-                            <span id="currentVersion">...</span>
-                            <span id="versionStatus" class="version-status"></span>
-                        </div>
-                        <div class="version-actions">
-                            <button class="btn btn-sm" id="checkUpdateBtn" onclick="checkForUpdates()">Check for
-                                Updates</button>
-                            <button class="btn btn-green btn-sm" id="doUpdateBtn" onclick="performUpdate()"
-                                style="display: none;">Update</button>
-                        </div>
-                    </div>
-                    <div id="updateMessage"></div>
-                    <div
-                        style="margin-top: 8px; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">
-                        <span id="lastVersionCheckText">Last checked: never</span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="section">
                 <h2>Blocking Mode</h2>
                 <p style="color: var(--text-muted); margin-bottom: 12px;">How blocked domains are responded to by the
                     DNS server.</p>
@@ -2136,6 +1973,170 @@
                     </thead>
                     <tbody id="tokensBody"></tbody>
                 </table>
+            </div>
+
+            <!-- System Settings -->
+            <div class="section">
+                <h2>System Settings</h2>
+                <div class="network-settings manage-system-only">
+                    <h3>Network</h3>
+                    <div class="network-field">
+                        <label>DNS Server</label>
+                        <input type="text" id="net-dns" placeholder="0.0.0.0:53" oninput="checkNetworkChanges()">
+                    </div>
+                    <div class="network-field">
+                        <label>Web Dashboard</label>
+                        <input type="text" id="net-web" placeholder="0.0.0.0:9853" oninput="checkNetworkChanges()">
+                    </div>
+                    <div class="network-field">
+                        <label>DNS-over-TLS</label>
+                        <div class="proto-toggle">
+                            <label class="toggle-switch"><input type="checkbox" id="toggle-dot"
+                                    onchange="toggleProtocol('dot', this.checked)"><span
+                                    class="toggle-slider"></span></label>
+                            <input type="text" id="net-dot" placeholder="0.0.0.0:853" disabled>
+                        </div>
+                    </div>
+                    <div class="network-field">
+                        <label>DNS-over-HTTPS</label>
+                        <div class="proto-toggle">
+                            <label class="toggle-switch"><input type="checkbox" id="toggle-doh"
+                                    onchange="toggleProtocol('doh', this.checked)"><span
+                                    class="toggle-slider"></span></label>
+                            <input type="text" id="net-doh" placeholder="0.0.0.0:443" disabled>
+                        </div>
+                    </div>
+                    <div class="network-field">
+                        <label>DNS-over-QUIC</label>
+                        <div class="proto-toggle">
+                            <label class="toggle-switch"><input type="checkbox" id="toggle-doq"
+                                    onchange="toggleProtocol('doq', this.checked)"><span
+                                    class="toggle-slider"></span></label>
+                            <input type="text" id="net-doq" placeholder="0.0.0.0:853" disabled>
+                        </div>
+                    </div>
+                    <div class="reconfig-banner" id="reconfigBanner">
+                        <div class="banner-title">&#9888; System command required</div>
+                        <div class="banner-desc">This change requires root privileges. Run this command in your
+                            terminal:</div>
+                        <div class="banner-cmd" id="reconfigCmd"></div>
+                        <div class="banner-desc">The service will restart automatically.</div>
+                        <div class="banner-actions">
+                            <button class="reconfig-btn-dismiss" onclick="dismissBanner()">Dismiss</button>
+                            <button class="reconfig-btn-copy" onclick="copyReconfigCmd()">Copy</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="tls-section manage-system-only">
+                    <h3>TLS Certificate</h3>
+                    <div class="tls-status" id="tlsStatus">
+                        <div class="tls-status-row">
+                            <div class="tls-status-item">
+                                <div class="tls-label">Status</div>
+                                <div class="tls-value" id="tlsCertType">Loading...</div>
+                            </div>
+                            <div class="tls-status-item">
+                                <div class="tls-label">Subject</div>
+                                <div class="tls-value" id="tlsSubject">&mdash;</div>
+                            </div>
+                            <div class="tls-status-item">
+                                <div class="tls-label">Expires</div>
+                                <div class="tls-value" id="tlsExpiry">&mdash;</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="tls-upload">
+                        <div class="tls-tabs">
+                            <button class="tls-tab active" onclick="switchTlsTab('pem')">PEM</button>
+                            <button class="tls-tab" onclick="switchTlsTab('p12')">PKCS12</button>
+                        </div>
+                        <div id="tls-pem-fields">
+                            <div class="tls-file-input">
+                                <label>Certificate file (chain)</label>
+                                <input type="file" id="tlsCertFile" accept=".pem,.crt,.cer">
+                            </div>
+                            <div class="tls-file-input">
+                                <label>Private key file (optional if in cert file)</label>
+                                <input type="file" id="tlsKeyFile" accept=".pem,.key">
+                            </div>
+                        </div>
+                        <div id="tls-p12-fields" style="display:none;">
+                            <div class="tls-file-input">
+                                <label>PKCS12 file (.pfx / .p12)</label>
+                                <input type="file" id="tlsP12File" accept=".pfx,.p12">
+                            </div>
+                        </div>
+                        <div class="tls-password" id="tlsPasswordField">
+                            <label
+                                style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Password</label>
+                            <input type="password" id="tlsPassword" placeholder="Certificate password">
+                        </div>
+                        <div class="tls-actions">
+                            <button class="btn btn-sm" onclick="uploadTlsCert()">Upload</button>
+                            <button class="btn btn-sm" id="tlsRemoveBtn" onclick="removeTlsCert()"
+                                style="display:none;">Remove &amp; use self-signed</button>
+                        </div>
+                        <div class="tls-msg" id="tlsMsg"></div>
+                    </div>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>Auto-Update Server</h3>
+                        <p class="warning">When enabled, oxi-dns automatically checks for updates every 8 hours. New
+                            versions are health-checked before being applied. If a health check fails, the
+                            current version continues running and a notification is shown.</p>
+                    </div>
+                    <label class="toggle-switch manage-system-only" id="toggle-autoupdate">
+                        <input type="checkbox" id="autoUpdateCheckbox" onchange="toggleAutoUpdate(this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="setting-row manage-system-only">
+                    <div class="setting-info">
+                        <h3>Release Channel</h3>
+                        <p>Choose which release channel to receive updates from.</p>
+                        <div class="channel-warning" id="channelWarning">
+                            &#9888; Development channel is not recommended for production use.
+                            You will receive untested pre-release builds that may contain bugs or breaking changes.
+                            Only use this for development or testing purposes.
+                        </div>
+                    </div>
+                    <select class="channel-select" id="releaseChannelSelect" onchange="setReleaseChannel(this.value)">
+                        <option value="stable">Stable</option>
+                        <option value="development">Development</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <div class="setting-info">
+                        <h3>IPv6 (AAAA)</h3>
+                        <p>Include IPv6 records in DNS responses. Disable on IPv4-only networks to prevent
+                            clients from attempting unreachable IPv6 connections.</p>
+                    </div>
+                    <label class="toggle-switch manage-system-only" id="toggle-ipv6">
+                        <input type="checkbox" id="ipv6Checkbox" onchange="toggleIpv6(this.checked)">
+                        <span class="toggle-slider"></span>
+                    </label>
+                </div>
+                <div class="version-box">
+                    <div class="version-row">
+                        <div class="version-info">
+                            <span>Version: </span>
+                            <span id="currentVersion">...</span>
+                            <span id="versionStatus" class="version-status"></span>
+                        </div>
+                        <div class="version-actions">
+                            <button class="btn btn-sm" id="checkUpdateBtn" onclick="checkForUpdates()">Check for
+                                Updates</button>
+                            <button class="btn btn-green btn-sm" id="doUpdateBtn" onclick="performUpdate()"
+                                style="display: none;">Update</button>
+                        </div>
+                    </div>
+                    <div id="updateMessage"></div>
+                    <div
+                        style="margin-top: 8px; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono);">
+                        <span id="lastVersionCheckText">Last checked: never</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
