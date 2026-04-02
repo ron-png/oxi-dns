@@ -1272,6 +1272,7 @@ async fn api_enable_blocking(
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageFeatures)?;
     state.blocklist.set_enabled(true).await;
+    state.upstream.cache_flush();
     info!("Blocking enabled via web API");
     state.save_config().await;
     Ok(StatusCode::OK)
@@ -1283,6 +1284,7 @@ async fn api_disable_blocking(
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageFeatures)?;
     state.blocklist.set_enabled(false).await;
+    state.upstream.cache_flush();
     info!("Blocking disabled via web API");
     state.save_config().await;
     Ok(StatusCode::OK)
@@ -1356,6 +1358,7 @@ async fn api_set_blocking_mode(
     };
     info!("Blocking mode set to {}", new_mode);
     *state.blocking_mode.write().await = new_mode;
+    state.upstream.cache_flush();
     state.save_config().await;
     Ok(StatusCode::OK)
 }
@@ -1417,6 +1420,7 @@ async fn api_toggle_feature(
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageFeatures)?;
     state.features.set_feature(&id, req.enabled).await;
+    state.upstream.cache_flush();
     state.save_config().await;
     Ok(StatusCode::OK)
 }
@@ -1456,6 +1460,7 @@ async fn api_add_blocked(
             .into_response());
     }
     state.blocklist.add_custom_blocked(&req.domain).await;
+    state.upstream.cache_flush();
     info!("Added {} to blocklist via web API", req.domain);
     state.save_config().await;
     Ok(StatusCode::OK)
@@ -1468,6 +1473,7 @@ async fn api_remove_blocked(
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageBlocklists)?;
     state.blocklist.remove_custom_blocked(&req.domain).await;
+    state.upstream.cache_flush();
     info!("Removed {} from blocklist via web API", req.domain);
     state.save_config().await;
     Ok(StatusCode::OK)
@@ -1489,6 +1495,7 @@ async fn api_add_allowlisted(
             .into_response());
     }
     state.blocklist.add_allowlisted(&req.domain).await;
+    state.upstream.cache_flush();
     info!("Added {} to allowlist via web API", req.domain);
     state.save_config().await;
     Ok(StatusCode::OK)
@@ -1501,6 +1508,7 @@ async fn api_remove_allowlisted(
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageAllowlist)?;
     state.blocklist.remove_allowlisted(&req.domain).await;
+    state.upstream.cache_flush();
     info!("Removed {} from allowlist via web API", req.domain);
     state.save_config().await;
     Ok(StatusCode::OK)
@@ -1550,6 +1558,7 @@ async fn api_add_blocklist_source(
     match state.blocklist.add_blocklist_source(&req.url).await {
         Ok(count) => {
             info!("Added blocklist source: {} ({} entries)", req.url, count);
+            state.upstream.cache_flush();
             state.save_config().await;
             Ok(Json(BlocklistAddResponse {
                 success: true,
@@ -1570,6 +1579,7 @@ async fn api_remove_blocklist_source(
 ) -> Result<StatusCode, Response> {
     require_permission(&user, Permission::ManageBlocklists)?;
     state.blocklist.remove_blocklist_source(&req.url).await;
+    state.upstream.cache_flush();
     info!("Removed blocklist source: {}", req.url);
     state.save_config().await;
     Ok(StatusCode::OK)
@@ -1721,6 +1731,7 @@ async fn api_set_ipv6(
     state
         .ipv6_enabled
         .store(req.enabled, std::sync::atomic::Ordering::Relaxed);
+    state.upstream.cache_flush();
     tracing::info!("IPv6 (AAAA) set to {}", req.enabled);
     state.save_config().await;
     Ok(StatusCode::OK)
