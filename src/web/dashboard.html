@@ -2067,12 +2067,12 @@
                             <div class="network-port-grid">
                                 <div class="network-port-card">
                                     <div class="network-port-label">IPv4 Port</div>
-                                    <input type="number" id="net-dns-ipv4-port" placeholder="53" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()">
+                                    <input type="number" id="net-dns-ipv4-port" placeholder="53" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)">
                                     <div class="listen-target" id="net-dns-ipv4-target"></div>
                                 </div>
                                 <div class="network-port-card">
                                     <div class="network-port-label">IPv6 Port</div>
-                                    <input type="number" id="net-dns-ipv6-port" placeholder="53" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()">
+                                    <input type="number" id="net-dns-ipv6-port" placeholder="53" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)">
                                     <div class="listen-target" id="net-dns-ipv6-target"></div>
                                 </div>
                             </div>
@@ -2084,12 +2084,12 @@
                             <div class="network-port-grid">
                                 <div class="network-port-card">
                                     <div class="network-port-label">IPv4 Port</div>
-                                    <input type="number" id="net-web-ipv4-port" placeholder="9853" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()">
+                                    <input type="number" id="net-web-ipv4-port" placeholder="9853" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)">
                                     <div class="listen-target" id="net-web-ipv4-target"></div>
                                 </div>
                                 <div class="network-port-card">
                                     <div class="network-port-label">IPv6 Port</div>
-                                    <input type="number" id="net-web-ipv6-port" placeholder="9853" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()">
+                                    <input type="number" id="net-web-ipv6-port" placeholder="9853" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)">
                                     <div class="listen-target" id="net-web-ipv6-target"></div>
                                 </div>
                             </div>
@@ -2105,12 +2105,12 @@
                                 <div class="network-port-grid">
                                     <div class="network-port-card">
                                         <div class="network-port-label">IPv4 Port</div>
-                                        <input type="number" id="net-dot-ipv4-port" placeholder="853" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()" disabled>
+                                        <input type="number" id="net-dot-ipv4-port" placeholder="853" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)" disabled>
                                         <div class="listen-target" id="net-dot-ipv4-target"></div>
                                     </div>
                                     <div class="network-port-card">
                                         <div class="network-port-label">IPv6 Port</div>
-                                        <input type="number" id="net-dot-ipv6-port" placeholder="853" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()" disabled>
+                                        <input type="number" id="net-dot-ipv6-port" placeholder="853" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)" disabled>
                                         <div class="listen-target" id="net-dot-ipv6-target"></div>
                                     </div>
                                 </div>
@@ -2127,12 +2127,12 @@
                                 <div class="network-port-grid">
                                     <div class="network-port-card">
                                         <div class="network-port-label">IPv4 Port</div>
-                                        <input type="number" id="net-doh-ipv4-port" placeholder="443" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()" disabled>
+                                        <input type="number" id="net-doh-ipv4-port" placeholder="443" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)" disabled>
                                         <div class="listen-target" id="net-doh-ipv4-target"></div>
                                     </div>
                                     <div class="network-port-card">
                                         <div class="network-port-label">IPv6 Port</div>
-                                        <input type="number" id="net-doh-ipv6-port" placeholder="443" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()" disabled>
+                                        <input type="number" id="net-doh-ipv6-port" placeholder="443" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)" disabled>
                                         <div class="listen-target" id="net-doh-ipv6-target"></div>
                                     </div>
                                 </div>
@@ -2149,12 +2149,12 @@
                                 <div class="network-port-grid">
                                     <div class="network-port-card">
                                         <div class="network-port-label">IPv4 Port</div>
-                                        <input type="number" id="net-doq-ipv4-port" placeholder="853" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()" disabled>
+                                        <input type="number" id="net-doq-ipv4-port" placeholder="853" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)" disabled>
                                         <div class="listen-target" id="net-doq-ipv4-target"></div>
                                     </div>
                                     <div class="network-port-card">
                                         <div class="network-port-label">IPv6 Port</div>
-                                        <input type="number" id="net-doq-ipv6-port" placeholder="853" min="1" max="65535" inputmode="numeric" oninput="checkNetworkChanges()" disabled>
+                                        <input type="number" id="net-doq-ipv6-port" placeholder="853" min="1" max="65535" inputmode="numeric" onbeforeinput="preventInvalidPortInput(event)" oninput="handleNetworkPortInput(this)" disabled>
                                         <div class="listen-target" id="net-doq-ipv6-target"></div>
                                     </div>
                                 </div>
@@ -3357,6 +3357,7 @@
         // ---- Network Settings ----
         let serverNetworkState = {};
         let networkPollTimer = null;
+        const MAX_PORT_NUMBER = 65535;
         let networkInputsInitialized = false;
         let bannerDismissed = false;
         let dismissedNetworkSignature = '';
@@ -3490,8 +3491,39 @@
             return isIpv6Host(host) ? `[${host}]:${port}` : `${host}:${port}`;
         }
 
+        function sanitizePortValue(value) {
+            const digitsOnly = String(value ?? '').replace(/\D+/g, '');
+            if (!digitsOnly) {
+                return '';
+            }
+
+            return String(Math.min(Number(digitsOnly), MAX_PORT_NUMBER));
+        }
+
+        function sanitizeNetworkPortInput(input) {
+            const sanitizedValue = sanitizePortValue(input.value);
+            if (input.value !== sanitizedValue) {
+                input.value = sanitizedValue;
+            }
+        }
+
+        function preventInvalidPortInput(event) {
+            if (event.inputType?.startsWith('delete') || event.data == null) {
+                return;
+            }
+
+            if (!/^\d+$/.test(event.data)) {
+                event.preventDefault();
+            }
+        }
+
+        function handleNetworkPortInput(input) {
+            sanitizeNetworkPortInput(input);
+            checkNetworkChanges();
+        }
+
         function isValidPort(port) {
-            return /^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= 65535;
+            return /^\d+$/.test(port) && Number(port) >= 1 && Number(port) <= MAX_PORT_NUMBER;
         }
 
         function shellQuote(value) {
@@ -3812,12 +3844,11 @@
         }
 
         function dismissBanner() {
+            syncNetworkInputsFromServer();
             document.getElementById('reconfigBanner').classList.remove('visible');
-            bannerDismissed = true;
-            dismissedNetworkSignature = JSON.stringify({
-                changes: getNetworkReconfigureChanges(),
-                validationError: getNetworkValidationError(),
-            });
+            bannerDismissed = false;
+            dismissedNetworkSignature = '';
+            checkNetworkChanges();
         }
 
         async function copyReconfigCmd() {
