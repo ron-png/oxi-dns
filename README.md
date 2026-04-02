@@ -244,7 +244,6 @@ Please note that this list is not a promise, rather thoughts I might change my m
   - fix weird bug when trying to open openvsx.eclipsecontent.org
   - Verify that the logs are deleted properly (feature)
   - Verify client IP anonymization (feature)
-  - delete unnecessary files/lines of code (chores)
   - Make the UI more user friendly (feature)
   - Verify DNS over TLS, HTTPS and QUIC work (feature)
   - Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands.
