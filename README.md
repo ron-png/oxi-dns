@@ -11,7 +11,8 @@ Supports plain DNS (UDP), DNS-over-TLS (DoT), DNS-over-HTTPS (DoH), and DNS-over
 > This project is mostly written by AI. If you're looking for a more reliable and battle-tested solution, check out [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome).
 
 
-<img width="946" height="884" alt="SCR-20260401-olkk" src="https://github.com/user-attachments/assets/326ddda3-b1e8-48db-abc6-61672a6cadc6" />
+<img width="934" height="881" alt="SCR-20260402-pajz" src="https://github.com/user-attachments/assets/ba57edf1-308a-49bd-8f1c-0191a32d6939" />
+
 
 
 ## Why Oxi-DNS?
