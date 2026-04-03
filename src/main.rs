@@ -344,6 +344,7 @@ async fn main() -> anyhow::Result<()> {
     {
         let bm = web_state.blocklist.clone();
         let interval_lock = web_state.blocklist_update_interval.clone();
+        let upstream = web_state.upstream.clone();
         tokio::spawn(async move {
             // Track when the last refresh happened so interval changes take effect promptly
             let mut last_refresh = tokio::time::Instant::now();
@@ -359,6 +360,7 @@ async fn main() -> anyhow::Result<()> {
                 let interval = std::time::Duration::from_secs(minutes * 60);
                 if last_refresh.elapsed() >= interval {
                     bm.refresh_sources().await;
+                    upstream.cache_flush();
                     last_refresh = tokio::time::Instant::now();
                 }
             }

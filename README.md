@@ -241,13 +241,12 @@ Please note that this list is not a promise, rather thoughts I might change my m
 
 ### Goals for Version 1:
 - verify that every feature on the WebUI works as expected
-  - Verify that the logs are deleted properly (feature)
-  - Verify client IP anonymization (feature)
-  - Make the UI more user friendly (feature)
-  - Verify DNS over TLS, HTTPS and QUIC work (feature)
-  - Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands.
-  - move the ipv6 toggle to a location that makes sense
-  - replace the logos of the toggles on the home page with something more fitting
+- Verify that the logs are deleted properly (feature)
+- Verify client IP anonymization (feature)
+- Make the UI more user friendly (feature)
+- Verify DNS over TLS, HTTPS and QUIC work (feature)
+- Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands.
+- move the ipv6 toggle to a location that makes sense
 
 ### Goals for Version 2:
 - Security enhancements

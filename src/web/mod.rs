@@ -591,8 +591,12 @@ async fn login_page() -> Html<&'static str> {
     Html(include_str!("login.html"))
 }
 
-async fn setup_page() -> Html<&'static str> {
-    Html(include_str!("setup.html"))
+async fn setup_page(State(state): State<AppState>) -> Response {
+    if !state.auth.needs_setup().await {
+        return axum::response::Redirect::to("/").into_response();
+    }
+
+    Html(include_str!("setup.html")).into_response()
 }
 
 async fn api_setup_info(State(state): State<AppState>) -> Json<serde_json::Value> {
@@ -1718,9 +1722,11 @@ async fn api_blocklist_refresh_sse(
 
     let (tx, mut rx) = tokio::sync::mpsc::channel::<crate::blocklist::RefreshEvent>(32);
     let blocklist = state.blocklist.clone();
+    let upstream = state.upstream.clone();
 
     tokio::spawn(async move {
         blocklist.refresh_sources_streaming(tx).await;
+        upstream.cache_flush();
     });
 
     let stream = async_stream::stream! {

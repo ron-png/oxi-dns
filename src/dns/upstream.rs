@@ -1166,15 +1166,36 @@ impl UpstreamForwarder {
         response: &hickory_proto::op::Message,
         ns_names: &[String],
     ) -> Vec<SocketAddr> {
+        self.resolve_referral_servers_with_depth(response, ns_names, MAX_REFERRAL_DEPTH)
+            .await
+    }
+
+    async fn resolve_referral_servers_with_depth(
+        &self,
+        response: &hickory_proto::op::Message,
+        ns_names: &[String],
+        nested_depth_remaining: usize,
+    ) -> Vec<SocketAddr> {
         let servers = extract_glue_records(response, ns_names);
         if !servers.is_empty() {
             return servers;
         }
 
+        if nested_depth_remaining == 0 {
+            warn!(
+                "Iterative: nested referral resolution depth exhausted for {:?}",
+                ns_names
+            );
+            return Vec::new();
+        }
+
         // No glue — resolve NS names iteratively (no third-party resolvers)
         let mut servers = Vec::new();
         for ns_name in ns_names {
-            if let Ok(addrs) = self.resolve_ns_iterative(ns_name).await {
+            if let Ok(addrs) = self
+                .resolve_ns_iterative_with_depth(ns_name, nested_depth_remaining - 1)
+                .await
+            {
                 servers.extend(addrs);
             }
             if !servers.is_empty() {
@@ -1187,6 +1208,15 @@ impl UpstreamForwarder {
     /// Resolve an NS hostname to IP addresses using iterative resolution from root.
     /// Uses a simplified walk (no QNAME minimization) to avoid deep recursion.
     async fn resolve_ns_iterative(&self, ns_name: &str) -> anyhow::Result<Vec<SocketAddr>> {
+        self.resolve_ns_iterative_with_depth(ns_name, MAX_REFERRAL_DEPTH)
+            .await
+    }
+
+    async fn resolve_ns_iterative_with_depth(
+        &self,
+        ns_name: &str,
+        nested_depth_remaining: usize,
+    ) -> anyhow::Result<Vec<SocketAddr>> {
         use hickory_proto::op::ResponseCode;
         use hickory_proto::rr::{Name, RData, RecordType};
 
@@ -1267,8 +1297,26 @@ impl UpstreamForwarder {
             let next_servers = extract_glue_records(&resp, &ns_names);
 
             if next_servers.is_empty() {
-                // No glue for sub-resolution — give up to avoid infinite recursion
-                anyhow::bail!("NS resolution: no glue records for {} referral", ns_name);
+                if nested_depth_remaining == 0 {
+                    anyhow::bail!(
+                        "NS resolution: nested referral depth exhausted for {}",
+                        ns_name
+                    );
+                }
+
+                let resolved_servers = self
+                    .resolve_referral_servers_with_depth(&resp, &ns_names, nested_depth_remaining)
+                    .await;
+
+                if resolved_servers.is_empty() {
+                    anyhow::bail!(
+                        "NS resolution: no glue records and could not resolve referral servers for {}",
+                        ns_name
+                    );
+                }
+
+                current_servers = resolved_servers;
+                continue;
             }
 
             current_servers = next_servers;
@@ -1735,6 +1783,29 @@ fn build_query(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use hickory_proto::op::Message;
+    use hickory_proto::rr::{Name, RData, Record};
+
+    fn test_forwarder() -> UpstreamForwarder {
+        let client_tls_config = crate::tls::build_client_config(vec![b"dot".to_vec()]).unwrap();
+        let quic_client_config = crate::tls::build_quic_client_config().unwrap();
+
+        UpstreamForwarder::new(
+            &["1.1.1.1:53".to_string()],
+            5_000,
+            client_tls_config,
+            quic_client_config,
+        )
+        .unwrap()
+    }
+
+    fn referral_without_glue(ns_name: &str) -> Message {
+        let mut msg = Message::new();
+        let zone = Name::from_ascii("example.com.").unwrap();
+        let ns = Name::from_ascii(ns_name).unwrap();
+        msg.add_name_server(Record::from_rdata(zone, 300, RData::NS(ns.into())));
+        msg
+    }
 
     /// Integration test: resolve a well-known hostname via root servers.
     /// This verifies the full iterative resolution path works without
@@ -1748,6 +1819,19 @@ mod tests {
         for addr in &addrs {
             assert_eq!(addr.port(), 853);
         }
+    }
+
+    #[tokio::test]
+    async fn referral_without_glue_returns_empty_when_nested_depth_is_exhausted() {
+        let forwarder = test_forwarder();
+        let response = referral_without_glue("ns1.example.net.");
+        let ns_names = vec!["ns1.example.net.".to_string()];
+
+        let servers = forwarder
+            .resolve_referral_servers_with_depth(&response, &ns_names, 0)
+            .await;
+
+        assert!(servers.is_empty());
     }
 }
 
