@@ -1,4 +1,5 @@
 use dashmap::DashMap;
+use futures::future::BoxFuture;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
@@ -1161,168 +1162,158 @@ impl UpstreamForwarder {
 
     /// Resolve servers from a referral response: first try glue records from the
     /// additional section, then fall back to iterative resolution of NS hostnames.
-    async fn resolve_referral_servers(
-        &self,
-        response: &hickory_proto::op::Message,
-        ns_names: &[String],
-    ) -> Vec<SocketAddr> {
+    fn resolve_referral_servers<'a>(
+        &'a self,
+        response: &'a hickory_proto::op::Message,
+        ns_names: &'a [String],
+    ) -> BoxFuture<'a, Vec<SocketAddr>> {
         self.resolve_referral_servers_with_depth(response, ns_names, MAX_REFERRAL_DEPTH)
-            .await
     }
 
-    async fn resolve_referral_servers_with_depth(
-        &self,
-        response: &hickory_proto::op::Message,
-        ns_names: &[String],
+    fn resolve_referral_servers_with_depth<'a>(
+        &'a self,
+        response: &'a hickory_proto::op::Message,
+        ns_names: &'a [String],
         nested_depth_remaining: usize,
-    ) -> Vec<SocketAddr> {
-        let servers = extract_glue_records(response, ns_names);
-        if !servers.is_empty() {
-            return servers;
-        }
-
-        if nested_depth_remaining == 0 {
-            warn!(
-                "Iterative: nested referral resolution depth exhausted for {:?}",
-                ns_names
-            );
-            return Vec::new();
-        }
-
-        // No glue — resolve NS names iteratively (no third-party resolvers)
-        let mut servers = Vec::new();
-        for ns_name in ns_names {
-            if let Ok(addrs) = self
-                .resolve_ns_iterative_with_depth(ns_name, nested_depth_remaining - 1)
-                .await
-            {
-                servers.extend(addrs);
-            }
+    ) -> BoxFuture<'a, Vec<SocketAddr>> {
+        Box::pin(async move {
+            let servers = extract_glue_records(response, ns_names);
             if !servers.is_empty() {
-                break;
+                return servers;
             }
-        }
-        servers
+
+            if nested_depth_remaining == 0 {
+                warn!(
+                    "Iterative: nested referral resolution depth exhausted for {:?}",
+                    ns_names
+                );
+                return Vec::new();
+            }
+
+            let mut servers = Vec::new();
+            for ns_name in ns_names {
+                if let Ok(addrs) = self
+                    .resolve_ns_iterative_with_depth(ns_name, nested_depth_remaining - 1)
+                    .await
+                {
+                    servers.extend(addrs);
+                }
+                if !servers.is_empty() {
+                    break;
+                }
+            }
+            servers
+        })
     }
 
-    /// Resolve an NS hostname to IP addresses using iterative resolution from root.
-    /// Uses a simplified walk (no QNAME minimization) to avoid deep recursion.
-    async fn resolve_ns_iterative(&self, ns_name: &str) -> anyhow::Result<Vec<SocketAddr>> {
-        self.resolve_ns_iterative_with_depth(ns_name, MAX_REFERRAL_DEPTH)
-            .await
-    }
-
-    async fn resolve_ns_iterative_with_depth(
-        &self,
-        ns_name: &str,
+    fn resolve_ns_iterative_with_depth<'a>(
+        &'a self,
+        ns_name: &'a str,
         nested_depth_remaining: usize,
-    ) -> anyhow::Result<Vec<SocketAddr>> {
-        use hickory_proto::op::ResponseCode;
-        use hickory_proto::rr::{Name, RData, RecordType};
+    ) -> BoxFuture<'a, anyhow::Result<Vec<SocketAddr>>> {
+        Box::pin(async move {
+            use hickory_proto::op::ResponseCode;
+            use hickory_proto::rr::{Name, RData, RecordType};
 
-        let fqdn = if ns_name.ends_with('.') {
-            ns_name.to_string()
-        } else {
-            format!("{}.", ns_name)
-        };
-        let name = Name::from_ascii(&fqdn)?;
+            let fqdn = if ns_name.ends_with('.') {
+                ns_name.to_string()
+            } else {
+                format!("{}.", ns_name)
+            };
+            let name = Name::from_ascii(&fqdn)?;
 
-        let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
-            .iter()
-            .map(|ip| SocketAddr::new(IpAddr::V4(*ip), 53))
-            .collect();
+            let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
+                .iter()
+                .map(|ip| SocketAddr::new(IpAddr::V4(*ip), 53))
+                .collect();
 
-        for _depth in 0..MAX_REFERRAL_DEPTH {
-            let query_packet = build_query(rand::random::<u16>(), &name, RecordType::A, false)?;
+            for _depth in 0..MAX_REFERRAL_DEPTH {
+                let query_packet = build_query(rand::random::<u16>(), &name, RecordType::A, false)?;
 
-            let (_resp_bytes, resp) =
-                match self.query_any_server(&query_packet, &current_servers).await {
-                    Some(r) => r,
-                    None => {
-                        anyhow::bail!("NS resolution: all servers failed for {}", ns_name)
+                let (_resp_bytes, resp) =
+                    match self.query_any_server(&query_packet, &current_servers).await {
+                        Some(r) => r,
+                        None => {
+                            anyhow::bail!("NS resolution: all servers failed for {}", ns_name)
+                        }
+                    };
+
+                if !resp.answers().is_empty() {
+                    let addrs: Vec<SocketAddr> = resp
+                        .answers()
+                        .iter()
+                        .filter_map(|r| match r.data() {
+                            RData::A(ip) => Some(SocketAddr::new(IpAddr::V4(ip.0), 53)),
+                            _ => None,
+                        })
+                        .collect();
+                    if !addrs.is_empty() {
+                        if self.cache_enabled.load(Ordering::Relaxed) {
+                            let ttl = extract_min_ttl(&resp);
+                            let key = make_cache_key(&fqdn, hickory_proto::rr::RecordType::A.into());
+                            self.cache.insert(
+                                key,
+                                CacheEntry {
+                                    response_bytes: _resp_bytes.clone(),
+                                    expires_at: Instant::now() + Duration::from_secs(ttl as u64),
+                                },
+                            );
+                        }
+                        return Ok(addrs);
                     }
-                };
+                }
 
-            // Got A records — done
-            if !resp.answers().is_empty() {
-                let addrs: Vec<SocketAddr> = resp
-                    .answers()
+                if resp.response_code() != ResponseCode::NoError {
+                    anyhow::bail!(
+                        "NS resolution: {} returned {:?}",
+                        ns_name,
+                        resp.response_code()
+                    );
+                }
+
+                let ns_names: Vec<String> = resp
+                    .name_servers()
                     .iter()
                     .filter_map(|r| match r.data() {
-                        RData::A(ip) => Some(SocketAddr::new(IpAddr::V4(ip.0), 53)),
+                        RData::NS(ns) => Some(ns.0.to_ascii()),
                         _ => None,
                     })
                     .collect();
-                if !addrs.is_empty() {
-                    // Cache the NS address resolution
-                    if self.cache_enabled.load(Ordering::Relaxed) {
-                        let ttl = extract_min_ttl(&resp);
-                        let key = make_cache_key(&fqdn, hickory_proto::rr::RecordType::A.into());
-                        self.cache.insert(
-                            key,
-                            CacheEntry {
-                                response_bytes: _resp_bytes.clone(),
-                                expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                            },
+
+                if ns_names.is_empty() {
+                    anyhow::bail!("NS resolution: no referral for {}", ns_name);
+                }
+
+                let next_servers = extract_glue_records(&resp, &ns_names);
+
+                if next_servers.is_empty() {
+                    if nested_depth_remaining == 0 {
+                        anyhow::bail!(
+                            "NS resolution: nested referral depth exhausted for {}",
+                            ns_name
                         );
                     }
-                    return Ok(addrs);
-                }
-            }
 
-            // Non-NOERROR is a dead end
-            if resp.response_code() != ResponseCode::NoError {
-                anyhow::bail!(
-                    "NS resolution: {} returned {:?}",
-                    ns_name,
-                    resp.response_code()
-                );
-            }
+                    let resolved_servers = self
+                        .resolve_referral_servers_with_depth(&resp, &ns_names, nested_depth_remaining)
+                        .await;
 
-            // Follow referral
-            let ns_names: Vec<String> = resp
-                .name_servers()
-                .iter()
-                .filter_map(|r| match r.data() {
-                    RData::NS(ns) => Some(ns.0.to_ascii()),
-                    _ => None,
-                })
-                .collect();
+                    if resolved_servers.is_empty() {
+                        anyhow::bail!(
+                            "NS resolution: no glue records and could not resolve referral servers for {}",
+                            ns_name
+                        );
+                    }
 
-            if ns_names.is_empty() {
-                anyhow::bail!("NS resolution: no referral for {}", ns_name);
-            }
-
-            // Extract glue A and AAAA records
-            let next_servers = extract_glue_records(&resp, &ns_names);
-
-            if next_servers.is_empty() {
-                if nested_depth_remaining == 0 {
-                    anyhow::bail!(
-                        "NS resolution: nested referral depth exhausted for {}",
-                        ns_name
-                    );
+                    current_servers = resolved_servers;
+                    continue;
                 }
 
-                let resolved_servers = self
-                    .resolve_referral_servers_with_depth(&resp, &ns_names, nested_depth_remaining)
-                    .await;
-
-                if resolved_servers.is_empty() {
-                    anyhow::bail!(
-                        "NS resolution: no glue records and could not resolve referral servers for {}",
-                        ns_name
-                    );
-                }
-
-                current_servers = resolved_servers;
-                continue;
+                current_servers = next_servers;
             }
 
-            current_servers = next_servers;
-        }
-
-        anyhow::bail!("NS resolution: max depth exceeded for {}", ns_name)
+            anyhow::bail!("NS resolution: max depth exceeded for {}", ns_name)
+        })
     }
 
     /// Try querying each server in the list until one gives a parseable response.
@@ -1784,9 +1775,11 @@ fn build_query(
 mod tests {
     use super::*;
     use hickory_proto::op::Message;
+    use hickory_proto::rr::rdata;
     use hickory_proto::rr::{Name, RData, Record};
 
     fn test_forwarder() -> UpstreamForwarder {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let client_tls_config = crate::tls::build_client_config(vec![b"dot".to_vec()]).unwrap();
         let quic_client_config = crate::tls::build_quic_client_config().unwrap();
 
@@ -1803,7 +1796,7 @@ mod tests {
         let mut msg = Message::new();
         let zone = Name::from_ascii("example.com.").unwrap();
         let ns = Name::from_ascii(ns_name).unwrap();
-        msg.add_name_server(Record::from_rdata(zone, 300, RData::NS(ns.into())));
+        msg.add_name_server(Record::from_rdata(zone, 300, RData::NS(rdata::NS(ns))));
         msg
     }
 

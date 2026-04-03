@@ -2081,6 +2081,16 @@
                 <h2>System Settings</h2>
                 <div class="network-settings manage-system-only">
                     <h3>Network</h3>
+                    <div class="setting-row" style="margin-bottom: 16px;">
+                        <div class="setting-info">
+                            <h3>IPv6 DNS Answers</h3>
+                            <p>Enable AAAA responses and IPv6 resolution behavior for the DNS server. Keep this next to the listener settings so protocol behavior and network ports live in one place.</p>
+                        </div>
+                        <label class="toggle-switch" id="toggle-ipv6">
+                            <input type="checkbox" id="ipv6Checkbox" onchange="toggleIpv6(this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                    </div>
                     <div class="network-field">
                         <label>DNS Server</label>
                         <div class="network-input-stack">
@@ -2179,15 +2189,6 @@
                                     </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
-                    <div class="network-field">
-                        <label>IPv6 (AAAA)</label>
-                        <div class="proto-toggle">
-                            <label class="toggle-switch" id="toggle-ipv6">
-                                <input type="checkbox" id="ipv6Checkbox" onchange="toggleIpv6(this.checked)">
-                                <span class="toggle-slider"></span>
-                            </label>
                         </div>
                     </div>
                     <div class="reconfig-banner" id="reconfigBanner">
