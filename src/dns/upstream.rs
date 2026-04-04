@@ -1342,9 +1342,8 @@ impl UpstreamForwarder {
                 v
             };
 
-            let (tx, mut rx) = tokio::sync::mpsc::channel::<(Vec<u8>, hickory_proto::op::Message)>(
-                selected.len(),
-            );
+            let (tx, mut rx) =
+                tokio::sync::mpsc::channel::<(Vec<u8>, hickory_proto::op::Message)>(selected.len());
 
             for server in &selected {
                 let tx = tx.clone();
