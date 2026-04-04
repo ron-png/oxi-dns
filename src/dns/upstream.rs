@@ -1322,6 +1322,7 @@ impl UpstreamForwarder {
     }
 
     /// Try querying each server in the list until one gives a parseable response.
+    /// Retries once with a fresh random selection if all servers fail on the first attempt.
     async fn query_any_server(
         &self,
         packet: &[u8],
@@ -1329,64 +1330,82 @@ impl UpstreamForwarder {
     ) -> Option<(Vec<u8>, hickory_proto::op::Message)> {
         use hickory_proto::serialize::binary::BinDecodable;
 
-        // Pick up to 3 random servers to query in parallel
-        let selected: Vec<SocketAddr> = {
-            use rand::seq::SliceRandom;
-            let mut rng = rand::rng();
-            let mut v: Vec<SocketAddr> = servers.to_vec();
-            v.shuffle(&mut rng);
-            v.truncate(3);
-            v
-        };
+        // Retry once on failure — handles lost UDP packets, cold-start ARP delays, etc.
+        for attempt in 0..2 {
+            // Pick up to 3 random servers to query in parallel
+            let selected: Vec<SocketAddr> = {
+                use rand::seq::SliceRandom;
+                let mut rng = rand::rng();
+                let mut v: Vec<SocketAddr> = servers.to_vec();
+                v.shuffle(&mut rng);
+                v.truncate(3);
+                v
+            };
 
-        let (tx, mut rx) =
-            tokio::sync::mpsc::channel::<(Vec<u8>, hickory_proto::op::Message)>(selected.len());
+            let (tx, mut rx) = tokio::sync::mpsc::channel::<(Vec<u8>, hickory_proto::op::Message)>(
+                selected.len(),
+            );
 
-        for server in &selected {
-            let tx = tx.clone();
-            let forwarder = self.clone();
-            let packet = packet.to_vec();
-            let server = *server;
+            for server in &selected {
+                let tx = tx.clone();
+                let forwarder = self.clone();
+                let packet = packet.to_vec();
+                let server = *server;
 
-            tokio::spawn(async move {
-                match forwarder.forward_udp(&packet, server).await {
-                    Ok(bytes) => {
-                        match hickory_proto::op::Message::from_bytes(&bytes) {
-                            Ok(msg) => {
-                                // TC bit — retry over TCP
-                                if msg.header().truncated() {
-                                    debug!("Truncated response from {}, retrying via TCP", server);
-                                    if let Ok(tcp_bytes) =
-                                        forwarder.forward_tcp(&packet, server).await
-                                    {
-                                        if let Ok(tcp_msg) =
-                                            hickory_proto::op::Message::from_bytes(&tcp_bytes)
+                tokio::spawn(async move {
+                    match forwarder.forward_udp(&packet, server).await {
+                        Ok(bytes) => {
+                            match hickory_proto::op::Message::from_bytes(&bytes) {
+                                Ok(msg) => {
+                                    // TC bit — retry over TCP
+                                    if msg.header().truncated() {
+                                        debug!(
+                                            "Truncated response from {}, retrying via TCP",
+                                            server
+                                        );
+                                        if let Ok(tcp_bytes) =
+                                            forwarder.forward_tcp(&packet, server).await
                                         {
-                                            let _ = tx.send((tcp_bytes, tcp_msg)).await;
-                                            return;
+                                            if let Ok(tcp_msg) =
+                                                hickory_proto::op::Message::from_bytes(&tcp_bytes)
+                                            {
+                                                let _ = tx.send((tcp_bytes, tcp_msg)).await;
+                                                return;
+                                            }
                                         }
+                                        // TCP failed — still send truncated UDP response
+                                        let _ = tx.send((bytes, msg)).await;
+                                    } else {
+                                        let _ = tx.send((bytes, msg)).await;
                                     }
-                                    // TCP failed — still send truncated UDP response
-                                    let _ = tx.send((bytes, msg)).await;
-                                } else {
-                                    let _ = tx.send((bytes, msg)).await;
+                                }
+                                Err(e) => {
+                                    warn!("Iterative: bad response from {}: {}", server, e);
                                 }
                             }
-                            Err(e) => {
-                                warn!("Iterative: bad response from {}: {}", server, e);
-                            }
+                        }
+                        Err(e) => {
+                            warn!("Iterative: {} failed: {}", server, e);
                         }
                     }
-                    Err(e) => {
-                        warn!("Iterative: {} failed: {}", server, e);
-                    }
-                }
-            });
-        }
-        drop(tx);
+                });
+            }
+            drop(tx);
 
-        // Return the first successful response
-        rx.recv().await
+            // Return the first successful response
+            if let Some(result) = rx.recv().await {
+                return Some(result);
+            }
+
+            if attempt == 0 {
+                debug!(
+                    "Iterative: all {} servers failed, retrying with fresh selection",
+                    selected.len()
+                );
+            }
+        }
+
+        None
     }
 
     // ==================== Transport methods ====================

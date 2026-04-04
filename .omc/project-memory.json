@@ -93,21 +93,33 @@
   },
   "hotPaths": [
     {
-      "path": "src",
-      "accessCount": 26,
-      "lastAccessed": 1775336433505,
-      "type": "directory"
-    },
-    {
       "path": "src/dns/upstream.rs",
-      "accessCount": 19,
-      "lastAccessed": 1775328626301,
+      "accessCount": 33,
+      "lastAccessed": 1775337513667,
       "type": "file"
     },
     {
+      "path": "src",
+      "accessCount": 27,
+      "lastAccessed": 1775337291166,
+      "type": "directory"
+    },
+    {
       "path": "src/main.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775337280600,
+      "type": "file"
+    },
+    {
+      "path": "src/web/mod.rs",
+      "accessCount": 5,
+      "lastAccessed": 1775337300156,
+      "type": "file"
+    },
+    {
+      "path": "src/config.rs",
       "accessCount": 4,
-      "lastAccessed": 1775336460059,
+      "lastAccessed": 1775337280841,
       "type": "file"
     },
     {
@@ -117,27 +129,21 @@
       "type": "directory"
     },
     {
-      "path": "src/web/mod.rs",
-      "accessCount": 3,
-      "lastAccessed": 1775336435349,
-      "type": "file"
-    },
-    {
       "path": "src/query_log.rs",
       "accessCount": 3,
       "lastAccessed": 1775336438121,
       "type": "file"
     },
     {
-      "path": "src/config.rs",
-      "accessCount": 3,
-      "lastAccessed": 1775336438631,
-      "type": "file"
-    },
-    {
       "path": "src/dns/listener_doq.rs",
       "accessCount": 3,
       "lastAccessed": 1775336441583,
+      "type": "file"
+    },
+    {
+      "path": "src/dns/mod.rs",
+      "accessCount": 3,
+      "lastAccessed": 1775337284257,
       "type": "file"
     },
     {
@@ -165,9 +171,15 @@
       "type": "file"
     },
     {
-      "path": "src/dns/mod.rs",
+      "path": "src/dns/handler.rs",
       "accessCount": 2,
-      "lastAccessed": 1775336461755,
+      "lastAccessed": 1775337284338,
+      "type": "file"
+    },
+    {
+      "path": "src/features.rs",
+      "accessCount": 2,
+      "lastAccessed": 1775337291871,
       "type": "file"
     },
     {
@@ -204,18 +216,6 @@
       "path": "src/auth/password.rs",
       "accessCount": 1,
       "lastAccessed": 1775328553045,
-      "type": "file"
-    },
-    {
-      "path": "src/dns/handler.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775328553513,
-      "type": "file"
-    },
-    {
-      "path": "src/features.rs",
-      "accessCount": 1,
-      "lastAccessed": 1775328556567,
       "type": "file"
     },
     {
@@ -265,6 +265,12 @@
       "accessCount": 1,
       "lastAccessed": 1775328562335,
       "type": "file"
+    },
+    {
+      "path": "src/web",
+      "accessCount": 1,
+      "lastAccessed": 1775337294447,
+      "type": "directory"
     }
   ],
   "userDirectives": []
