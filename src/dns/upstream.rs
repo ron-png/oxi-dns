@@ -1250,7 +1250,8 @@ impl UpstreamForwarder {
                     if !addrs.is_empty() {
                         if self.cache_enabled.load(Ordering::Relaxed) {
                             let ttl = extract_min_ttl(&resp);
-                            let key = make_cache_key(&fqdn, hickory_proto::rr::RecordType::A.into());
+                            let key =
+                                make_cache_key(&fqdn, hickory_proto::rr::RecordType::A.into());
                             self.cache.insert(
                                 key,
                                 CacheEntry {
@@ -1295,7 +1296,11 @@ impl UpstreamForwarder {
                     }
 
                     let resolved_servers = self
-                        .resolve_referral_servers_with_depth(&resp, &ns_names, nested_depth_remaining)
+                        .resolve_referral_servers_with_depth(
+                            &resp,
+                            &ns_names,
+                            nested_depth_remaining,
+                        )
                         .await;
 
                     if resolved_servers.is_empty() {
