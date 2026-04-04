@@ -1433,6 +1433,25 @@ impl UpstreamForwarder {
                                     }
                                 }
                                 Err(e) => {
+                                    // Fallback: some servers send malformed additional sections
+                                    // (e.g. corrupt OPT records). Zero out ARCOUNT in the header
+                                    // and retry parsing to salvage the answer/authority sections.
+                                    if bytes.len() >= 12 {
+                                        let mut patched = bytes.clone();
+                                        patched[10] = 0;
+                                        patched[11] = 0;
+                                        if let Ok(msg) =
+                                            hickory_proto::op::Message::from_bytes(&patched)
+                                        {
+                                            debug!(
+                                                "Iterative: recovered malformed response from {} \
+                                                 (dropped additional section): {}",
+                                                server, e
+                                            );
+                                            let _ = tx.send((patched, msg)).await;
+                                            return;
+                                        }
+                                    }
                                     warn!("Iterative: bad response from {}: {}", server, e);
                                 }
                             }
