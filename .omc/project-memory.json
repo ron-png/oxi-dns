@@ -94,20 +94,20 @@
   "hotPaths": [
     {
       "path": "src/dns/upstream.rs",
-      "accessCount": 34,
-      "lastAccessed": 1775337870576,
+      "accessCount": 46,
+      "lastAccessed": 1775338496826,
       "type": "file"
     },
     {
       "path": "src",
-      "accessCount": 27,
-      "lastAccessed": 1775337291166,
+      "accessCount": 28,
+      "lastAccessed": 1775338218696,
       "type": "directory"
     },
     {
       "path": "src/main.rs",
-      "accessCount": 5,
-      "lastAccessed": 1775337280600,
+      "accessCount": 6,
+      "lastAccessed": 1775338351445,
       "type": "file"
     },
     {
@@ -181,6 +181,12 @@
       "accessCount": 2,
       "lastAccessed": 1775337291871,
       "type": "file"
+    },
+    {
+      "path": "src/web",
+      "accessCount": 2,
+      "lastAccessed": 1775338377923,
+      "type": "directory"
     },
     {
       "path": "Cargo.toml",
@@ -267,9 +273,9 @@
       "type": "file"
     },
     {
-      "path": "src/web",
+      "path": "src/dns",
       "accessCount": 1,
-      "lastAccessed": 1775337294447,
+      "lastAccessed": 1775338282863,
       "type": "directory"
     }
   ],

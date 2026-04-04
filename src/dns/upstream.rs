@@ -1075,6 +1075,62 @@ impl UpstreamForwarder {
             // Got answers
             if !resp.answers().is_empty() {
                 if at_full_name {
+                    // Check if response has a CNAME but no address records for the target type.
+                    // A recursive resolver must follow the CNAME chain to provide the final answer.
+                    let has_target_type = resp
+                        .answers()
+                        .iter()
+                        .any(|r| r.record_type() == target_type);
+                    if !has_target_type
+                        && (target_type == RecordType::A
+                            || target_type == RecordType::AAAA)
+                    {
+                        let cname_target =
+                            resp.answers().iter().find_map(|r| match r.data() {
+                                RData::CNAME(cname) => Some(cname.0.clone()),
+                                _ => None,
+                            });
+                        if let Some(cname_target) = cname_target {
+                            debug!(
+                                "Iterative: following CNAME {} -> {}",
+                                target_name, cname_target
+                            );
+                            // Resolve the CNAME target iteratively
+                            let cname_query = build_query(
+                                rand::random::<u16>(),
+                                &cname_target,
+                                target_type,
+                                false,
+                            )?;
+                            if let Ok((resolved_bytes, resolved_label)) =
+                                self.forward_iterative(&cname_query).await
+                            {
+                                if let Ok(resolved_msg) = Message::from_bytes(&resolved_bytes) {
+                                    // Build a combined response: CNAME + resolved address records
+                                    let mut combined = Message::new();
+                                    combined.set_header(*resp.header());
+                                    combined.set_id(original_id);
+                                    for q in resp.queries() {
+                                        combined.add_query(q.clone());
+                                    }
+                                    // Add the CNAME record(s) from the original response
+                                    for answer in resp.answers() {
+                                        combined.add_answer(answer.clone());
+                                    }
+                                    // Add the resolved address records
+                                    for answer in resolved_msg.answers() {
+                                        combined.add_answer(answer.clone());
+                                    }
+                                    let combined_bytes = combined.to_vec()?;
+                                    return Ok((
+                                        combined_bytes,
+                                        format!("iterative({})", resolved_label),
+                                    ));
+                                }
+                            }
+                            // CNAME resolution failed — return the CNAME-only response as fallback
+                        }
+                    }
                     return Ok((resp_bytes, format!("iterative({})", last_label)));
                 }
                 // Answer for minimized query — send full query to same servers
