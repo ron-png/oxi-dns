@@ -243,6 +243,7 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - Make the UI more user friendly (feature)
 - Verify DNS over TLS, HTTPS and QUIC work (feature)
 - Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands.
+- let the user define the https request path
 
 ### Goals for Version 2:
 - Security enhancements
