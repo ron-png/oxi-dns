@@ -1,7 +1,7 @@
 {
-  "tool_name": "Bash",
-  "tool_input_preview": "{\"command\":\"sudo cp /etc/resolv.conf /etc/resolv.conf.oxibak && sudo bash -c 'printf \\\"nameserver 9.9.9.9\\\\nnameserver 1.1.1.1\\\\n\\\" > /etc/resolv.conf' && echo \\\"Switched to public DNS\\\"\",\"description...",
-  "error": "Exit code 1\nsudo: ein Terminal ist erforderlich, um das Passwort zu lesen; verwenden Sie entweder die Option -S zum Lesen von der Standardeingabe oder konfigurieren Sie einen Askpass-Helfer\nsudo: Ein Passwort ist notwendig",
-  "timestamp": "2026-04-04T21:32:13.670Z",
-  "retry_count": 4
+  "tool_name": "Read",
+  "tool_input_preview": "{\"file_path\":\"/home/a/coding/oxi-dns/src/dns/upstream.rs\"}",
+  "error": "File content (25686 tokens) exceeds maximum allowed tokens (10000). Use offset and limit parameters to read specific portions of the file, or search for specific content instead of reading the whole file.",
+  "timestamp": "2026-04-06T19:15:18.475Z",
+  "retry_count": 1
 }

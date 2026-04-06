@@ -1,12 +1,11 @@
 use dashmap::DashMap;
-use futures::future::BoxFuture;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, OnceCell};
 use tracing::{debug, warn};
 
 /// DNS root server addresses (IPv4).
@@ -481,32 +480,6 @@ fn response_bytes_match_name_and_type(
         .unwrap_or(false)
 }
 
-/// Extract IP addresses from glue records (A and AAAA) in the additional section.
-fn extract_glue_records(
-    response: &hickory_proto::op::Message,
-    ns_names: &[String],
-) -> Vec<SocketAddr> {
-    use hickory_proto::rr::RData;
-
-    let mut servers = Vec::new();
-    for record in response.additionals() {
-        let name = record.name().to_ascii();
-        if !ns_names.iter().any(|ns| ns == &name) {
-            continue;
-        }
-        match record.data() {
-            RData::A(ip) => {
-                servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
-            }
-            RData::AAAA(ip) => {
-                servers.push(SocketAddr::new(IpAddr::V6(ip.0), 53));
-            }
-            _ => {}
-        }
-    }
-    servers
-}
-
 /// A pooled DoQ connection for reuse per RFC 9250 §5.5.1.
 struct DoqPoolEntry {
     endpoint: quinn::Endpoint,
@@ -528,6 +501,8 @@ pub struct UpstreamForwarder {
     /// DoQ connection pool keyed by (addr, hostname) per RFC 9250 §5.5.1.
     #[allow(clippy::type_complexity)]
     doq_pool: Arc<DashMap<(SocketAddr, String), Arc<Mutex<DoqPoolEntry>>>>,
+    /// Lazily-initialized recursive resolver for root-server mode.
+    recursor: Arc<OnceCell<Arc<hickory_recursor::Recursor>>>,
 }
 
 impl UpstreamForwarder {
@@ -563,7 +538,39 @@ impl UpstreamForwarder {
             cache_misses: Arc::new(AtomicU64::new(0)),
             cache_enabled: Arc::new(AtomicBool::new(true)),
             doq_pool: Arc::new(DashMap::new()),
+            recursor: Arc::new(OnceCell::new()),
         })
+    }
+
+    /// Lazily build the recursive resolver used when root-server mode is enabled.
+    async fn recursor(&self) -> anyhow::Result<Arc<hickory_recursor::Recursor>> {
+        self.recursor
+            .get_or_try_init(|| async {
+                use hickory_resolver::config::NameServerConfigGroup;
+
+                let ips: Vec<IpAddr> = ROOT_SERVERS
+                    .iter()
+                    .map(|ip| IpAddr::V4(*ip))
+                    .chain(ROOT_SERVERS_V6.iter().map(|ip| IpAddr::V6(*ip)))
+                    .collect();
+                let roots = NameServerConfigGroup::from_ips_clear(&ips, 53, true);
+
+                let cache_size = if self.cache_enabled.load(Ordering::Relaxed) {
+                    1024
+                } else {
+                    1
+                };
+                // TODO(v2): enable DNSSEC validation. Today we run security-unaware to
+                // match the previous custom resolver's behavior.
+                let recursor = hickory_recursor::Recursor::builder()
+                    .ns_cache_size(cache_size)
+                    .record_cache_size(cache_size)
+                    .build(roots)
+                    .map_err(|e| anyhow::anyhow!("failed to build recursor: {}", e))?;
+                Ok::<_, anyhow::Error>(Arc::new(recursor))
+            })
+            .await
+            .cloned()
     }
 
     pub fn set_use_root_servers(&self, enabled: bool) {
@@ -911,573 +918,74 @@ impl UpstreamForwarder {
 
     // ==================== Iterative resolution (root servers) ====================
 
-    /// Iterative resolution starting from root servers with QNAME minimization (RFC 7816).
+    /// Recursive resolution starting from root servers using `hickory-recursor`.
     ///
-    /// Instead of forwarding the client's packet to a third-party resolver, we walk
-    /// the DNS hierarchy ourselves: root → TLD → authoritative, sending fresh queries
-    /// with RD=0 at each level. QNAME minimization reveals only the minimal number of
-    /// labels needed at each step for maximum privacy.
+    /// The recursor walks the DNS hierarchy itself (root → TLD → authoritative) and
+    /// handles QNAME minimization, glue/NS chasing, and its own caching internally.
     async fn forward_iterative(&self, packet: &[u8]) -> anyhow::Result<(Vec<u8>, String)> {
-        use hickory_proto::op::{Message, ResponseCode};
-        use hickory_proto::rr::{Name, RData, RecordType};
+        use hickory_proto::op::{Message, MessageType, Query, ResponseCode};
         use hickory_proto::serialize::binary::BinDecodable;
 
-        // Parse the original client query
         let original = Message::from_bytes(packet)?;
         let question = original
             .queries()
             .first()
             .ok_or_else(|| anyhow::anyhow!("No question in DNS query"))?;
-        let target_name = question.name().clone();
-        let target_type = question.query_type();
         let original_id = original.header().id();
+        let qname = question.name().clone();
+        let qtype = question.query_type();
+        let qclass = question.query_class();
+        let label = format!("iterative({})", qname);
 
-        // Collect labels for QNAME minimization.
-        // For "www.example.com." → ["www", "example", "com"]
-        let labels: Vec<String> = target_name
-            .iter()
-            .map(|l| String::from_utf8_lossy(l).to_string())
-            .collect();
+        let recursor = self.recursor().await?;
+        let lookup_query = Query::query(qname.clone(), qtype);
 
-        let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
-            .iter()
-            .map(|ip| SocketAddr::new(IpAddr::V4(*ip), 53))
-            .collect();
-        let mut last_label = "root".to_string();
-        let mut known_zone_depth: usize = 0;
+        let mut response = Message::new();
+        response.set_id(original_id);
+        response.set_message_type(MessageType::Response);
+        response.set_op_code(original.op_code());
+        response.set_recursion_desired(original.recursion_desired());
+        response.set_recursion_available(true);
+        let mut echo = Query::new();
+        echo.set_name(qname.clone());
+        echo.set_query_type(qtype);
+        echo.set_query_class(qclass);
+        response.add_query(echo);
 
-        // Check referral cache: find the deepest cached zone to start from
-        if self.cache_enabled.load(Ordering::Relaxed) {
-            for start in 0..labels.len() {
-                let zone = format!("{}.", labels[start..].join(".")).to_lowercase();
-                let key = (zone.clone(), hickory_proto::rr::RecordType::NS.into());
-                if let Some(entry) = self.cache.get(&key) {
-                    if !entry.is_expired() {
-                        if let Ok(cached_resp) =
-                            hickory_proto::op::Message::from_bytes(&entry.response_bytes)
-                        {
-                            let ns_names: Vec<String> = cached_resp
-                                .name_servers()
-                                .iter()
-                                .filter_map(|r| match r.data() {
-                                    RData::NS(ns) => Some(ns.0.to_ascii()),
-                                    _ => None,
-                                })
-                                .collect();
-                            let cached_servers = extract_glue_records(&cached_resp, &ns_names);
-                            if !cached_servers.is_empty() {
-                                debug!("Iterative: starting from cached referral for {}", zone);
-                                current_servers = cached_servers;
-                                known_zone_depth = labels.len() - start;
-                                break;
-                            }
-                        }
-                    }
+        let resolve_fut = recursor.resolve(lookup_query, std::time::Instant::now(), false);
+        match tokio::time::timeout(self.timeout, resolve_fut).await {
+            Ok(Ok(lookup)) => {
+                response.set_response_code(ResponseCode::NoError);
+                for record in lookup.records().iter().cloned() {
+                    response.add_answer(record);
                 }
             }
-        }
-
-        for _depth in 0..MAX_REFERRAL_DEPTH {
-            // QNAME minimization: reveal one more label than the known zone
-            let qmin_depth = (known_zone_depth + 1).min(labels.len());
-            let at_full_name = qmin_depth >= labels.len();
-
-            let query_packet = if at_full_name {
-                // At authoritative level — send the full original query with RD=0
-                build_query(original_id, &target_name, target_type, false)?
-            } else {
-                // Minimized: build name from the rightmost qmin_depth labels
-                let start = labels.len() - qmin_depth;
-                let name_str = format!("{}.", labels[start..].join("."));
-                let name = Name::from_ascii(&name_str)?;
-                build_query(rand::random::<u16>(), &name, RecordType::NS, false)?
-            };
-
-            debug!(
-                "Iterative depth {}: querying {} servers (zone depth {})",
-                _depth,
-                current_servers.len(),
-                known_zone_depth
-            );
-
-            let (resp_bytes, resp) =
-                match self.query_any_server(&query_packet, &current_servers).await {
-                    Some(r) => r,
-                    None => {
-                        anyhow::bail!("Iterative resolution: all servers failed at {}", last_label);
-                    }
-                };
-
-            // Extract NS names from authority section
-            let ns_names: Vec<String> = resp
-                .name_servers()
-                .iter()
-                .filter_map(|r| match r.data() {
-                    RData::NS(ns) => Some(ns.0.to_ascii()),
+            Ok(Err(e)) => {
+                use hickory_proto::ProtoErrorKind;
+                let mut mapped = false;
+                let proto_err = match e.kind() {
+                    hickory_recursor::ErrorKind::Proto(p) => Some(p),
                     _ => None,
-                })
-                .collect();
-
-            // Referral: NS records present, no answers, NOERROR
-            if !ns_names.is_empty()
-                && resp.answers().is_empty()
-                && resp.response_code() == ResponseCode::NoError
-            {
-                let next_servers = self.resolve_referral_servers(&resp, &ns_names).await;
-                if next_servers.is_empty() {
-                    warn!(
-                        "Iterative: could not resolve any NS for referral at {}",
-                        last_label
-                    );
-                    return self
-                        .iterative_fallback_full_query(
-                            original_id,
-                            &target_name,
-                            target_type,
-                            &current_servers,
-                            &resp_bytes,
-                            &last_label,
-                        )
-                        .await;
-                }
-
-                // Update zone depth from the NS record owner name
-                if let Some(ns_record) = resp.name_servers().first() {
-                    known_zone_depth = ns_record.name().num_labels() as usize;
-                } else {
-                    known_zone_depth = qmin_depth;
-                }
-
-                last_label = ns_names
-                    .first()
-                    .cloned()
-                    .unwrap_or_else(|| "unknown".to_string());
-                current_servers = next_servers;
-
-                // Cache the referral response so future queries for this zone skip earlier levels
-                if self.cache_enabled.load(Ordering::Relaxed) {
-                    if let Some(ns_record) = resp.name_servers().first() {
-                        let zone = ns_record.name().to_ascii().to_lowercase();
-                        let ttl = extract_min_ttl(&resp);
-                        self.cache.insert(
-                            (zone, hickory_proto::rr::RecordType::NS.into()),
-                            CacheEntry {
-                                response_bytes: resp_bytes.clone(),
-                                expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                            },
-                        );
+                };
+                if let Some(proto_err) = proto_err {
+                    if let ProtoErrorKind::NoRecordsFound { response_code, .. } = proto_err.kind() {
+                        response.set_response_code(*response_code);
+                        mapped = true;
                     }
                 }
-
-                continue;
-            }
-
-            // Got answers
-            if !resp.answers().is_empty() {
-                if at_full_name {
-                    // Check if response has a CNAME but no address records for the target type.
-                    // A recursive resolver must follow the CNAME chain to provide the final answer.
-                    let has_target_type = resp
-                        .answers()
-                        .iter()
-                        .any(|r| r.record_type() == target_type);
-                    if !has_target_type
-                        && (target_type == RecordType::A || target_type == RecordType::AAAA)
-                    {
-                        let cname_target = resp.answers().iter().find_map(|r| match r.data() {
-                            RData::CNAME(cname) => Some(cname.0.clone()),
-                            _ => None,
-                        });
-                        if let Some(cname_target) = cname_target {
-                            debug!(
-                                "Iterative: following CNAME {} -> {}",
-                                target_name, cname_target
-                            );
-                            // Resolve the CNAME target iteratively
-                            let cname_query = build_query(
-                                rand::random::<u16>(),
-                                &cname_target,
-                                target_type,
-                                false,
-                            )?;
-                            if let Ok((resolved_bytes, resolved_label)) =
-                                Box::pin(self.forward_iterative(&cname_query)).await
-                            {
-                                if let Ok(resolved_msg) = Message::from_bytes(&resolved_bytes) {
-                                    // Build a combined response: CNAME + resolved address records
-                                    let mut combined = Message::new();
-                                    combined.set_header(*resp.header());
-                                    combined.set_id(original_id);
-                                    for q in resp.queries() {
-                                        combined.add_query(q.clone());
-                                    }
-                                    // Add the CNAME record(s) from the original response
-                                    for answer in resp.answers() {
-                                        combined.add_answer(answer.clone());
-                                    }
-                                    // Add the resolved address records
-                                    for answer in resolved_msg.answers() {
-                                        combined.add_answer(answer.clone());
-                                    }
-                                    let combined_bytes = combined.to_vec()?;
-                                    return Ok((
-                                        combined_bytes,
-                                        format!("iterative({})", resolved_label),
-                                    ));
-                                }
-                            }
-                            // CNAME resolution failed — return the CNAME-only response as fallback
-                        }
-                    }
-                    return Ok((resp_bytes, format!("iterative({})", last_label)));
+                if !mapped {
+                    warn!("Iterative resolution for {} failed: {}", qname, e);
+                    response.set_response_code(ResponseCode::ServFail);
                 }
-                // Answer for minimized query — send full query to same servers
-                return self
-                    .iterative_fallback_full_query(
-                        original_id,
-                        &target_name,
-                        target_type,
-                        &current_servers,
-                        &resp_bytes,
-                        &last_label,
-                    )
-                    .await;
             }
-
-            // NXDOMAIN — domain doesn't exist
-            if resp.response_code() == ResponseCode::NXDomain {
-                if at_full_name {
-                    return Ok((resp_bytes, format!("iterative({})", last_label)));
-                }
-                // Minimized query got NXDOMAIN — send full query to confirm
-                return self
-                    .iterative_fallback_full_query(
-                        original_id,
-                        &target_name,
-                        target_type,
-                        &current_servers,
-                        &resp_bytes,
-                        &last_label,
-                    )
-                    .await;
-            }
-
-            // SERVFAIL, REFUSED, or empty NOERROR
-            if at_full_name {
-                return Ok((resp_bytes, format!("iterative({})", last_label)));
-            }
-            // Ambiguous response for minimized query — try full query
-            return self
-                .iterative_fallback_full_query(
-                    original_id,
-                    &target_name,
-                    target_type,
-                    &current_servers,
-                    &resp_bytes,
-                    &last_label,
-                )
-                .await;
-        }
-
-        anyhow::bail!("Iterative resolution: max referral depth exceeded")
-    }
-
-    /// When a minimized query gets a non-referral response, send the full original
-    /// query to the same servers to get a proper response for the client.
-    async fn iterative_fallback_full_query(
-        &self,
-        original_id: u16,
-        target_name: &hickory_proto::rr::Name,
-        target_type: hickory_proto::rr::RecordType,
-        servers: &[SocketAddr],
-        fallback_bytes: &[u8],
-        last_label: &str,
-    ) -> anyhow::Result<(Vec<u8>, String)> {
-        let full_packet = build_query(original_id, target_name, target_type, false)?;
-        if let Some((bytes, response)) = self.query_any_server(&full_packet, servers).await {
-            if response_matches_name_and_type(&response, target_name, target_type) {
-                return Ok((bytes, format!("iterative({})", last_label)));
+            Err(_) => {
+                warn!("Iterative resolution for {} timed out", qname);
+                response.set_response_code(ResponseCode::ServFail);
             }
         }
 
-        if response_bytes_match_name_and_type(fallback_bytes, target_name, target_type) {
-            return Ok((
-                fallback_bytes.to_vec(),
-                format!("iterative({})", last_label),
-            ));
-        }
-
-        anyhow::bail!(
-            "Iterative resolution: no response matching {} {:?}",
-            target_name.to_ascii(),
-            target_type
-        )
-    }
-
-    /// Resolve servers from a referral response: first try glue records from the
-    /// additional section, then fall back to iterative resolution of NS hostnames.
-    fn resolve_referral_servers<'a>(
-        &'a self,
-        response: &'a hickory_proto::op::Message,
-        ns_names: &'a [String],
-    ) -> BoxFuture<'a, Vec<SocketAddr>> {
-        self.resolve_referral_servers_with_depth(response, ns_names, MAX_REFERRAL_DEPTH)
-    }
-
-    fn resolve_referral_servers_with_depth<'a>(
-        &'a self,
-        response: &'a hickory_proto::op::Message,
-        ns_names: &'a [String],
-        nested_depth_remaining: usize,
-    ) -> BoxFuture<'a, Vec<SocketAddr>> {
-        Box::pin(async move {
-            let servers = extract_glue_records(response, ns_names);
-            if !servers.is_empty() {
-                return servers;
-            }
-
-            if nested_depth_remaining == 0 {
-                warn!(
-                    "Iterative: nested referral resolution depth exhausted for {:?}",
-                    ns_names
-                );
-                return Vec::new();
-            }
-
-            let mut servers = Vec::new();
-            for ns_name in ns_names {
-                if let Ok(addrs) = self
-                    .resolve_ns_iterative_with_depth(ns_name, nested_depth_remaining - 1)
-                    .await
-                {
-                    servers.extend(addrs);
-                }
-                if !servers.is_empty() {
-                    break;
-                }
-            }
-            servers
-        })
-    }
-
-    fn resolve_ns_iterative_with_depth<'a>(
-        &'a self,
-        ns_name: &'a str,
-        nested_depth_remaining: usize,
-    ) -> BoxFuture<'a, anyhow::Result<Vec<SocketAddr>>> {
-        Box::pin(async move {
-            use hickory_proto::op::ResponseCode;
-            use hickory_proto::rr::{Name, RData, RecordType};
-
-            let fqdn = if ns_name.ends_with('.') {
-                ns_name.to_string()
-            } else {
-                format!("{}.", ns_name)
-            };
-            let name = Name::from_ascii(&fqdn)?;
-
-            let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
-                .iter()
-                .map(|ip| SocketAddr::new(IpAddr::V4(*ip), 53))
-                .collect();
-
-            for _depth in 0..MAX_REFERRAL_DEPTH {
-                let query_packet = build_query(rand::random::<u16>(), &name, RecordType::A, false)?;
-
-                let (_resp_bytes, resp) =
-                    match self.query_any_server(&query_packet, &current_servers).await {
-                        Some(r) => r,
-                        None => {
-                            anyhow::bail!("NS resolution: all servers failed for {}", ns_name)
-                        }
-                    };
-
-                if !resp.answers().is_empty() {
-                    let addrs: Vec<SocketAddr> = resp
-                        .answers()
-                        .iter()
-                        .filter_map(|r| match r.data() {
-                            RData::A(ip) => Some(SocketAddr::new(IpAddr::V4(ip.0), 53)),
-                            _ => None,
-                        })
-                        .collect();
-                    if !addrs.is_empty() {
-                        if self.cache_enabled.load(Ordering::Relaxed) {
-                            let ttl = extract_min_ttl(&resp);
-                            let key =
-                                make_cache_key(&fqdn, hickory_proto::rr::RecordType::A.into());
-                            self.cache.insert(
-                                key,
-                                CacheEntry {
-                                    response_bytes: _resp_bytes.clone(),
-                                    expires_at: Instant::now() + Duration::from_secs(ttl as u64),
-                                },
-                            );
-                        }
-                        return Ok(addrs);
-                    }
-                }
-
-                if resp.response_code() != ResponseCode::NoError {
-                    anyhow::bail!(
-                        "NS resolution: {} returned {:?}",
-                        ns_name,
-                        resp.response_code()
-                    );
-                }
-
-                let ns_names: Vec<String> = resp
-                    .name_servers()
-                    .iter()
-                    .filter_map(|r| match r.data() {
-                        RData::NS(ns) => Some(ns.0.to_ascii()),
-                        _ => None,
-                    })
-                    .collect();
-
-                if ns_names.is_empty() {
-                    anyhow::bail!("NS resolution: no referral for {}", ns_name);
-                }
-
-                let next_servers = extract_glue_records(&resp, &ns_names);
-
-                if next_servers.is_empty() {
-                    if nested_depth_remaining == 0 {
-                        anyhow::bail!(
-                            "NS resolution: nested referral depth exhausted for {}",
-                            ns_name
-                        );
-                    }
-
-                    let resolved_servers = self
-                        .resolve_referral_servers_with_depth(
-                            &resp,
-                            &ns_names,
-                            nested_depth_remaining,
-                        )
-                        .await;
-
-                    if resolved_servers.is_empty() {
-                        anyhow::bail!(
-                            "NS resolution: no glue records and could not resolve referral servers for {}",
-                            ns_name
-                        );
-                    }
-
-                    current_servers = resolved_servers;
-                    continue;
-                }
-
-                current_servers = next_servers;
-            }
-
-            anyhow::bail!("NS resolution: max depth exceeded for {}", ns_name)
-        })
-    }
-
-    /// Try querying each server in the list until one gives a parseable response.
-    /// Retries once with a fresh random selection if all servers fail on the first attempt.
-    async fn query_any_server(
-        &self,
-        packet: &[u8],
-        servers: &[SocketAddr],
-    ) -> Option<(Vec<u8>, hickory_proto::op::Message)> {
-        use hickory_proto::serialize::binary::BinDecodable;
-
-        // Retry once on failure — handles lost UDP packets, cold-start ARP delays, etc.
-        for attempt in 0..2 {
-            // Pick up to 3 random servers to query in parallel
-            let selected: Vec<SocketAddr> = {
-                use rand::seq::SliceRandom;
-                let mut rng = rand::rng();
-                let mut v: Vec<SocketAddr> = servers.to_vec();
-                v.shuffle(&mut rng);
-                v.truncate(3);
-                v
-            };
-
-            let (tx, mut rx) =
-                tokio::sync::mpsc::channel::<(Vec<u8>, hickory_proto::op::Message)>(selected.len());
-
-            for server in &selected {
-                let tx = tx.clone();
-                let forwarder = self.clone();
-                let packet = packet.to_vec();
-                let server = *server;
-
-                tokio::spawn(async move {
-                    match forwarder.forward_udp(&packet, server).await {
-                        Ok(bytes) => {
-                            match hickory_proto::op::Message::from_bytes(&bytes) {
-                                Ok(msg) => {
-                                    // TC bit — retry over TCP
-                                    if msg.header().truncated() {
-                                        debug!(
-                                            "Truncated response from {}, retrying via TCP",
-                                            server
-                                        );
-                                        if let Ok(tcp_bytes) =
-                                            forwarder.forward_tcp(&packet, server).await
-                                        {
-                                            if let Ok(tcp_msg) =
-                                                hickory_proto::op::Message::from_bytes(&tcp_bytes)
-                                            {
-                                                let _ = tx.send((tcp_bytes, tcp_msg)).await;
-                                                return;
-                                            }
-                                        }
-                                        // TCP failed — still send truncated UDP response
-                                        let _ = tx.send((bytes, msg)).await;
-                                    } else {
-                                        let _ = tx.send((bytes, msg)).await;
-                                    }
-                                }
-                                Err(e) => {
-                                    // Fallback: some servers send malformed additional sections
-                                    // (e.g. corrupt OPT records). Zero out ARCOUNT in the header
-                                    // and retry parsing to salvage the answer/authority sections.
-                                    if bytes.len() >= 12 {
-                                        let mut patched = bytes.clone();
-                                        patched[10] = 0;
-                                        patched[11] = 0;
-                                        if let Ok(msg) =
-                                            hickory_proto::op::Message::from_bytes(&patched)
-                                        {
-                                            debug!(
-                                                "Iterative: recovered malformed response from {} \
-                                                 (dropped additional section): {}",
-                                                server, e
-                                            );
-                                            let _ = tx.send((patched, msg)).await;
-                                            return;
-                                        }
-                                    }
-                                    warn!("Iterative: bad response from {}: {}", server, e);
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            warn!("Iterative: {} failed: {}", server, e);
-                        }
-                    }
-                });
-            }
-            drop(tx);
-
-            // Return the first successful response
-            if let Some(result) = rx.recv().await {
-                return Some(result);
-            }
-
-            if attempt == 0 {
-                debug!(
-                    "Iterative: all {} servers failed, retrying with fresh selection",
-                    selected.len()
-                );
-            }
-        }
-
-        None
+        let bytes = response.to_vec()?;
+        Ok((bytes, label))
     }
 
     // ==================== Transport methods ====================
@@ -1870,74 +1378,7 @@ fn build_query(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use hickory_proto::op::Message;
-    use hickory_proto::rr::rdata;
-    use hickory_proto::rr::{Name, RData, Record};
-
-    fn test_forwarder() -> UpstreamForwarder {
-        let _ = rustls::crypto::ring::default_provider().install_default();
-        let client_tls_config = crate::tls::build_client_config(vec![b"dot".to_vec()]).unwrap();
-        let quic_client_config = crate::tls::build_quic_client_config().unwrap();
-
-        UpstreamForwarder::new(
-            &["1.1.1.1:53".to_string()],
-            5_000,
-            client_tls_config,
-            quic_client_config,
-        )
-        .unwrap()
-    }
-
-    fn referral_without_glue(ns_name: &str) -> Message {
-        let mut msg = Message::new();
-        let zone = Name::from_ascii("example.com.").unwrap();
-        let ns = Name::from_ascii(ns_name).unwrap();
-        msg.add_name_server(Record::from_rdata(zone, 300, RData::NS(rdata::NS(ns))));
-        msg
-    }
-
-    /// Integration test: resolve a well-known hostname via root servers.
-    /// This verifies the full iterative resolution path works without
-    /// any system DNS dependency.
-    #[tokio::test]
-    async fn test_resolve_via_root_servers() {
-        // dns.google is a stable hostname that should always resolve
-        let addrs = resolve_via_root_servers("dns.google", 853).await.unwrap();
-        assert!(!addrs.is_empty(), "Should resolve to at least one address");
-        // All returned addresses should have the requested port
-        for addr in &addrs {
-            assert_eq!(addr.port(), 853);
-        }
-    }
-
-    #[tokio::test]
-    async fn referral_without_glue_returns_empty_when_nested_depth_is_exhausted() {
-        let forwarder = test_forwarder();
-        let response = referral_without_glue("ns1.example.net.");
-        let ns_names = vec!["ns1.example.net.".to_string()];
-
-        let servers = forwarder
-            .resolve_referral_servers_with_depth(&response, &ns_names, 0)
-            .await;
-
-        assert!(servers.is_empty());
-    }
-}
-
-#[cfg(test)]
-mod cache_tests {
-    use super::*;
     use hickory_proto::op::Query;
-    use std::time::{Duration, Instant};
-
-    #[test]
-    fn cache_entry_is_expired_after_ttl() {
-        let entry = CacheEntry {
-            response_bytes: vec![0u8; 10],
-            expires_at: Instant::now() - Duration::from_secs(1),
-        };
-        assert!(entry.is_expired());
-    }
 
     #[test]
     fn cache_entry_is_not_expired_before_ttl() {
@@ -2120,37 +1561,6 @@ mod cache_tests {
         msg.set_header(header);
 
         assert!(msg.header().truncated());
-    }
-
-    #[test]
-    fn glue_extraction_includes_aaaa() {
-        use hickory_proto::op::{Header, Message, MessageType, ResponseCode};
-        use hickory_proto::rr::rdata;
-        use hickory_proto::rr::{Name, RData, Record};
-
-        let mut msg = Message::new();
-        let mut header = Header::new();
-        header.set_id(1);
-        header.set_message_type(MessageType::Response);
-        header.set_response_code(ResponseCode::NoError);
-        msg.set_header(header);
-
-        // Add NS record in authority
-        let ns_name = Name::from_ascii("example.com.").unwrap();
-        let ns_target = Name::from_ascii("ns1.example.com.").unwrap();
-        let ns_rdata = RData::NS(rdata::NS(ns_target.clone()));
-        let ns_record = Record::from_rdata(ns_name, 300, ns_rdata);
-        msg.add_name_server(ns_record);
-
-        // Add AAAA glue in additional (no A glue)
-        let aaaa_rdata = RData::AAAA("2001:db8::1".parse().unwrap());
-        let aaaa_record = Record::from_rdata(ns_target, 300, aaaa_rdata);
-        msg.add_additional(aaaa_record);
-
-        let ns_names = vec!["ns1.example.com.".to_string()];
-        let servers = extract_glue_records(&msg, &ns_names);
-        assert!(!servers.is_empty(), "Should extract AAAA glue records");
-        assert!(servers[0].is_ipv6());
     }
 
     #[test]
