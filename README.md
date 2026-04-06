@@ -248,6 +248,7 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - Security enhancements
   - DNSsec
   - DNScrypt
+  - Rate limits for clients
 - logging system errors
 
 ### Goals for Version 3:
