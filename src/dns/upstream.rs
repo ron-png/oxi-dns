@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UdpSocket;
-use tokio::sync::{Mutex, OnceCell};
+use tokio::sync::Mutex;
 use tracing::{debug, warn};
 
 /// DNS root server addresses (IPv4).
@@ -502,7 +502,10 @@ pub struct UpstreamForwarder {
     #[allow(clippy::type_complexity)]
     doq_pool: Arc<DashMap<(SocketAddr, String), Arc<Mutex<DoqPoolEntry>>>>,
     /// Lazily-initialized recursive resolver for root-server mode.
-    recursor: Arc<OnceCell<Arc<hickory_recursor::Recursor>>>,
+    /// Wrapped in a Mutex<Option<...>> so it can be reset (e.g. when caching
+    /// is toggled or the user-facing cache is flushed) without leaking stale
+    /// internal recursor state.
+    recursor: Arc<Mutex<Option<Arc<hickory_recursor::Recursor>>>>,
 }
 
 impl UpstreamForwarder {
@@ -538,39 +541,55 @@ impl UpstreamForwarder {
             cache_misses: Arc::new(AtomicU64::new(0)),
             cache_enabled: Arc::new(AtomicBool::new(true)),
             doq_pool: Arc::new(DashMap::new()),
-            recursor: Arc::new(OnceCell::new()),
+            recursor: Arc::new(Mutex::new(None)),
         })
     }
 
     /// Lazily build the recursive resolver used when root-server mode is enabled.
     async fn recursor(&self) -> anyhow::Result<Arc<hickory_recursor::Recursor>> {
-        self.recursor
-            .get_or_try_init(|| async {
-                use hickory_resolver::config::NameServerConfigGroup;
+        use hickory_resolver::config::NameServerConfigGroup;
 
-                let ips: Vec<IpAddr> = ROOT_SERVERS
-                    .iter()
-                    .map(|ip| IpAddr::V4(*ip))
-                    .chain(ROOT_SERVERS_V6.iter().map(|ip| IpAddr::V6(*ip)))
-                    .collect();
-                let roots = NameServerConfigGroup::from_ips_clear(&ips, 53, true);
+        let mut guard = self.recursor.lock().await;
+        if let Some(r) = guard.as_ref() {
+            return Ok(r.clone());
+        }
 
-                let cache_size = if self.cache_enabled.load(Ordering::Relaxed) {
-                    1024
-                } else {
-                    1
-                };
-                // TODO(v2): enable DNSSEC validation. Today we run security-unaware to
-                // match the previous custom resolver's behavior.
-                let recursor = hickory_recursor::Recursor::builder()
-                    .ns_cache_size(cache_size)
-                    .record_cache_size(cache_size)
-                    .build(roots)
-                    .map_err(|e| anyhow::anyhow!("failed to build recursor: {}", e))?;
-                Ok::<_, anyhow::Error>(Arc::new(recursor))
-            })
-            .await
-            .cloned()
+        let ips: Vec<IpAddr> = ROOT_SERVERS
+            .iter()
+            .map(|ip| IpAddr::V4(*ip))
+            .chain(ROOT_SERVERS_V6.iter().map(|ip| IpAddr::V6(*ip)))
+            .collect();
+        let roots = NameServerConfigGroup::from_ips_clear(&ips, 53, true);
+
+        let cache_size = if self.cache_enabled.load(Ordering::Relaxed) {
+            1024
+        } else {
+            1
+        };
+        // TODO(v2): enable DNSSEC validation. Today we run security-unaware to
+        // match the previous custom resolver's behavior.
+        let recursor = hickory_recursor::Recursor::builder()
+            .ns_cache_size(cache_size)
+            .record_cache_size(cache_size)
+            .build(roots)
+            .map_err(|e| anyhow::anyhow!("failed to build recursor: {}", e))?;
+        let arc = Arc::new(recursor);
+        *guard = Some(arc.clone());
+        Ok(arc)
+    }
+
+    /// Reset the lazily-built recursor so the next call rebuilds it with
+    /// fresh internal state and the current cache settings.
+    fn reset_recursor(&self) {
+        if let Ok(mut guard) = self.recursor.try_lock() {
+            *guard = None;
+        } else {
+            // If somebody is mid-build, just spawn a best-effort async clear.
+            let r = self.recursor.clone();
+            tokio::spawn(async move {
+                *r.lock().await = None;
+            });
+        }
     }
 
     pub fn set_use_root_servers(&self, enabled: bool) {
@@ -595,11 +614,19 @@ impl UpstreamForwarder {
         self.cache_hits.store(0, Ordering::Relaxed);
         self.cache_misses.store(0, Ordering::Relaxed);
         self.doq_pool.clear();
+        // Drop the recursor too — its internal NS/record cache would otherwise
+        // outlive a user-initiated flush.
+        self.reset_recursor();
     }
 
     /// Set whether caching is enabled.
     pub fn set_cache_enabled(&self, enabled: bool) {
-        self.cache_enabled.store(enabled, Ordering::Relaxed);
+        let prev = self.cache_enabled.swap(enabled, Ordering::Relaxed);
+        if prev != enabled {
+            // Recursor's internal cache size is fixed at build time; rebuild
+            // it so it picks up the new setting.
+            self.reset_recursor();
+        }
     }
 
     /// Remove expired entries from the cache and stale DoQ connections. Returns number removed.
@@ -962,30 +989,78 @@ impl UpstreamForwarder {
             }
             Ok(Err(e)) => {
                 use hickory_proto::ProtoErrorKind;
-                let mut mapped = false;
                 let proto_err = match e.kind() {
                     hickory_recursor::ErrorKind::Proto(p) => Some(p),
                     _ => None,
                 };
+                // Clean negative answer: map straight through, no fallback.
                 if let Some(proto_err) = proto_err {
                     if let ProtoErrorKind::NoRecordsFound { response_code, .. } = proto_err.kind() {
                         response.set_response_code(*response_code);
-                        mapped = true;
+                        let bytes = response.to_vec()?;
+                        return Ok((bytes, label));
                     }
                 }
-                if !mapped {
-                    warn!("Iterative resolution for {} failed: {}", qname, e);
-                    response.set_response_code(ResponseCode::ServFail);
-                }
+                // Hard failure (out-of-bailiwick chase, malformed EDNS from auth,
+                // timeout deep in the walk, etc.) — hickory-recursor 0.25 has
+                // known holes here. Fall back to forwarders so the user still
+                // gets an answer.
+                warn!(
+                    "Iterative resolution for {} failed ({}); falling back to upstreams",
+                    qname, e
+                );
+                return self.forward_via_upstreams(packet).await;
             }
             Err(_) => {
-                warn!("Iterative resolution for {} timed out", qname);
-                response.set_response_code(ResponseCode::ServFail);
+                warn!(
+                    "Iterative resolution for {} timed out; falling back to upstreams",
+                    qname
+                );
+                return self.forward_via_upstreams(packet).await;
             }
         }
 
         let bytes = response.to_vec()?;
         Ok((bytes, label))
+    }
+
+    /// Forward a query through the configured upstream servers, racing them
+    /// when more than one is configured. Used both as the default path and
+    /// as a fallback when iterative resolution hits a recursor bug.
+    async fn forward_via_upstreams(&self, packet: &[u8]) -> anyhow::Result<(Vec<u8>, String)> {
+        let upstreams = self.upstreams.read().unwrap().clone();
+        if upstreams.is_empty() {
+            anyhow::bail!("No upstreams configured for fallback");
+        }
+        if upstreams.len() == 1 {
+            let upstream = &upstreams[0];
+            let response = self.forward_single(packet, upstream).await?;
+            return Ok((response, upstream.label()));
+        }
+        let (tx, mut rx) = tokio::sync::mpsc::channel(upstreams.len());
+        for upstream in &upstreams {
+            let tx = tx.clone();
+            let forwarder = self.clone();
+            let packet = packet.to_vec();
+            let label = upstream.label();
+            let upstream = upstream.clone();
+            tokio::spawn(async move {
+                let result = forwarder.forward_single(&packet, &upstream).await;
+                let _ = tx.send((result, label)).await;
+            });
+        }
+        drop(tx);
+        let mut last_err = None;
+        while let Some((result, label)) = rx.recv().await {
+            match result {
+                Ok(response) => return Ok((response, label)),
+                Err(e) => {
+                    warn!("Upstream {} failed: {}", label, e);
+                    last_err = Some(e);
+                }
+            }
+        }
+        Err(last_err.unwrap_or_else(|| anyhow::anyhow!("All upstream DNS servers failed")))
     }
 
     // ==================== Transport methods ====================
