@@ -4,11 +4,8 @@ A fast, memory-safe DNS sinkhole that blocks ads, trackers, and malware at the n
 
 Supports plain DNS (UDP), DNS-over-TLS (DoT), DNS-over-HTTPS (DoH), and DNS-over-QUIC (DoQ). Ships as a single static binary with a built-in web dashboard — no dependencies, no containers required.
 
-> [!CAUTION]
-> **Currently in Beta** — If you encounter a bug, do not hesitate to open an issue. 
-
 > [!NOTE]
-> This project is mostly written by AI. If you're looking for a more battle-tested solution, check out [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome).
+> I do not recommend using this in any environment other than testing/development. If you're looking for a more battle-tested solution, check out [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome).
 
 
 <img width="934" height="881" alt="SCR-20260402-pajz" src="https://github.com/user-attachments/assets/ba57edf1-308a-49bd-8f1c-0191a32d6939" />
@@ -243,11 +240,13 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - Make the UI more user friendly (feature)
 - Verify DNS over TLS, HTTPS and QUIC work (feature)
 - Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands.
+- let the user define the https request path
 
 ### Goals for Version 2:
 - Security enhancements
   - DNSsec
   - DNScrypt
+  - Rate limits for clients
 - logging system errors
 
 ### Goals for Version 3:
