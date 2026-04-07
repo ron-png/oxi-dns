@@ -682,8 +682,122 @@
             color: var(--accent);
         }
 
+        /* ---- Logs table: scrollable wrap with edge fades ---- */
+        .logs-table-frame {
+            position: relative;
+            isolation: isolate;
+        }
+
+        .logs-table-frame::before,
+        .logs-table-frame::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 56px;
+            pointer-events: none;
+            z-index: 5;
+            opacity: 0;
+            transition: opacity 180ms ease;
+        }
+
+        .logs-table-frame::before {
+            left: 0;
+            background: linear-gradient(to right,
+                    var(--bg-subtle) 0%,
+                    rgba(16, 16, 20, 0.85) 40%,
+                    rgba(16, 16, 20, 0) 100%);
+        }
+
+        .logs-table-frame::after {
+            right: 0;
+            background: linear-gradient(to left,
+                    var(--bg-subtle) 0%,
+                    rgba(16, 16, 20, 0.85) 40%,
+                    rgba(16, 16, 20, 0) 100%);
+        }
+
+        .logs-table-frame[data-scroll-left="true"]::before {
+            opacity: 1;
+        }
+
+        .logs-table-frame[data-scroll-right="true"]::after {
+            opacity: 1;
+        }
+
+        /* Subtle "scroll for more" chevron, only when overflowing right. */
+        .logs-table-frame[data-scroll-right="true"]::after {
+            background:
+                linear-gradient(to left,
+                    var(--bg-subtle) 0%,
+                    rgba(16, 16, 20, 0.85) 40%,
+                    rgba(16, 16, 20, 0) 100%),
+                radial-gradient(circle at 80% 50%,
+                    var(--accent-dim) 0%,
+                    transparent 60%);
+        }
+
         #logs-table-wrap {
             overflow-x: auto;
+            overflow-y: hidden;
+            scrollbar-color: var(--border) transparent;
+            scrollbar-width: thin;
+        }
+
+        #logs-table-wrap::-webkit-scrollbar {
+            height: 8px;
+        }
+
+        #logs-table-wrap::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        #logs-table-wrap::-webkit-scrollbar-thumb {
+            background: var(--border);
+            border-radius: 4px;
+        }
+
+        #logs-table-wrap::-webkit-scrollbar-thumb:hover {
+            background: var(--accent);
+        }
+
+        /* Logs table column behaviors. */
+        #logs-table-wrap table {
+            min-width: 760px;
+            table-layout: auto;
+        }
+
+        #logs-table-wrap td.col-upstream {
+            max-width: 240px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-family: var(--font-mono);
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        #logs-table-wrap td.col-upstream:hover {
+            color: var(--text-primary);
+        }
+
+        #logs-table-wrap th.col-ms,
+        #logs-table-wrap td.col-ms {
+            text-align: right;
+            font-variant-numeric: tabular-nums;
+            font-family: var(--font-mono);
+            white-space: nowrap;
+            color: var(--text-muted);
+            width: 1%;
+            padding-right: 16px;
+        }
+
+        #logs-table-wrap td.col-ms.is-slow {
+            color: var(--color-orange);
+        }
+
+        #logs-table-wrap td.col-ms.is-fast {
+            color: var(--color-green);
         }
 
         .panel {
@@ -1889,24 +2003,26 @@
                     </select>
                 </div>
 
-                <div id="logs-table-wrap">
-                    <table>
-                        <thead>
-                            <tr>
-                                <th>Time</th>
-                                <th>Domain</th>
-                                <th>Type</th>
-                                <th>Client</th>
-                                <th>Status</th>
-                                <th>Source</th>
-                                <th>Upstream</th>
-                                <th>Time (ms)</th>
-                            </tr>
-                        </thead>
-                        <tbody id="logsBody"></tbody>
-                    </table>
-                    <div id="logsSentinel"></div>
-                    <div id="logsStatus" class="logs-status"></div>
+                <div class="logs-table-frame">
+                    <div id="logs-table-wrap">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th>Time</th>
+                                    <th>Domain</th>
+                                    <th>Type</th>
+                                    <th>Client</th>
+                                    <th>Status</th>
+                                    <th>Source</th>
+                                    <th>Upstream</th>
+                                    <th class="col-ms">Time (ms)</th>
+                                </tr>
+                            </thead>
+                            <tbody id="logsBody"></tbody>
+                        </table>
+                        <div id="logsSentinel"></div>
+                        <div id="logsStatus" class="logs-status"></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -4355,15 +4471,50 @@
             tr.appendChild(tdSource);
 
             const tdUpstream = document.createElement('td');
+            tdUpstream.className = 'col-upstream';
             tdUpstream.textContent = e.upstream || '-';
+            if (e.upstream) tdUpstream.title = e.upstream;
             tr.appendChild(tdUpstream);
 
             const tdMs = document.createElement('td');
-            tdMs.textContent = e.response_time_ms;
+            tdMs.className = 'col-ms';
+            const ms = Number(e.response_time_ms);
+            tdMs.textContent = Number.isFinite(ms) ? ms : '-';
+            if (Number.isFinite(ms)) {
+                if (ms <= 5) tdMs.classList.add('is-fast');
+                else if (ms >= 1000) tdMs.classList.add('is-slow');
+            }
             tr.appendChild(tdMs);
 
             return tr;
         }
+
+        // Edge-fade indicators for the logs table: show/hide left and right
+        // fades depending on whether the wrap is actually scrollable in that
+        // direction. Cheap, runs on scroll/resize/load.
+        function updateLogsScrollIndicators() {
+            const wrap = document.getElementById('logs-table-wrap');
+            if (!wrap) return;
+            const frame = wrap.parentElement;
+            if (!frame || !frame.classList.contains('logs-table-frame')) return;
+            const max = wrap.scrollWidth - wrap.clientWidth;
+            const left = wrap.scrollLeft;
+            const overflowing = max > 1;
+            frame.dataset.scrollLeft = (overflowing && left > 1) ? 'true' : 'false';
+            frame.dataset.scrollRight = (overflowing && left < max - 1) ? 'true' : 'false';
+        }
+
+        (function initLogsScrollIndicators() {
+            const wrap = document.getElementById('logs-table-wrap');
+            if (!wrap) return;
+            wrap.addEventListener('scroll', updateLogsScrollIndicators, { passive: true });
+            window.addEventListener('resize', updateLogsScrollIndicators);
+            // Recompute when row layout changes (rows added by infinite scroll,
+            // filter changes, etc.).
+            const obs = new MutationObserver(updateLogsScrollIndicators);
+            obs.observe(document.getElementById('logsBody'), { childList: true });
+            updateLogsScrollIndicators();
+        })();
 
         async function loadLogs() {
             if (logsLoading || !logsHasMore) return;
