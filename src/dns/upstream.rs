@@ -220,7 +220,21 @@ async fn udp_query(
             server
         );
     }
-    let msg = hickory_proto::op::Message::from_bytes(&buf[..len])?;
+    // Some authoritative servers return malformed EDNS OPT records in the
+    // additional section (e.g. ns1/ns2.dnsleaktest.com -> 23.239.16.110).
+    // hickory-proto's strict parser rejects the whole packet, which would
+    // make us SERVFAIL. Retry once with ARCOUNT zeroed so the additional
+    // section is skipped — answer/authority parse fine.
+    let msg = match hickory_proto::op::Message::from_bytes(&buf[..len]) {
+        Ok(m) => m,
+        Err(_) if len >= 12 => {
+            let mut patched = buf[..len].to_vec();
+            patched[10] = 0;
+            patched[11] = 0;
+            hickory_proto::op::Message::from_bytes(&patched)?
+        }
+        Err(e) => return Err(e.into()),
+    };
     // RFC 1035 §4.1.1: validate response transaction ID matches the query
     if packet.len() >= 2 && msg.header().id() != u16::from_be_bytes([packet[0], packet[1]]) {
         anyhow::bail!("DNS response ID mismatch from {}", server);
