@@ -491,7 +491,9 @@ async fn iterative_walk(
                         WalkOutcome::Answers(accumulated)
                     });
                 }
-                other => anyhow::bail!("Self-coded walker: response code {:?} for {}", other, qname),
+                other => {
+                    anyhow::bail!("Self-coded walker: response code {:?} for {}", other, qname)
+                }
             }
 
             // Direct answers matching the requested type — done.
@@ -552,10 +554,7 @@ async fn iterative_walk(
             let mut next_servers: Vec<SocketAddr> = Vec::new();
             for record in resp.additionals() {
                 let rec_name = record.name().to_ascii();
-                if ns_names
-                    .iter()
-                    .any(|n| n.eq_ignore_ascii_case(&rec_name))
-                {
+                if ns_names.iter().any(|n| n.eq_ignore_ascii_case(&rec_name)) {
                     match record.data() {
                         RData::A(ip) => {
                             next_servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
@@ -582,10 +581,7 @@ async fn iterative_walk(
             }
 
             if next_servers.is_empty() {
-                anyhow::bail!(
-                    "Self-coded walker: no usable NS for {} referral",
-                    qname
-                );
+                anyhow::bail!("Self-coded walker: no usable NS for {} referral", qname);
             }
 
             current_servers = next_servers;
