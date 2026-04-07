@@ -682,113 +682,175 @@
             color: var(--accent);
         }
 
-        /* ---- Logs table: scrollable wrap with edge fades ---- */
+        /* ---- Logs table: split into sticky head + scrolling body ----
+           The chrome (h2 row, retention, search, fake horizontal scrollbar,
+           and the column headers themselves) lives in `.logs-sticky-head`
+           which pins below the global `.header` while the user scrolls
+           through tbody rows. The horizontal scrollbar is a thin proxy strip
+           that sits ABOVE the column names; it scrolls a hidden spacer whose
+           width equals the body table's scrollWidth, and JS syncs scrollLeft
+           between the proxy strip, the body wrap, and the header table
+           (which uses `transform: translateX` since its container is
+           overflow:hidden). Both tables share an identical colgroup with
+           `table-layout: fixed` so columns line up perfectly. */
+
+        :root {
+            --logs-head-top: 65px;
+            /* shared column widths — both tables use these */
+            --c-time: 96px;
+            --c-type: 64px;
+            --c-client: 132px;
+            --c-status: 92px;
+            --c-source: 132px;
+            --c-upstream: 220px;
+            --c-ms: 96px;
+            --logs-min-width: 980px;
+        }
+
         .logs-table-frame {
             position: relative;
             isolation: isolate;
+            margin: 0 -24px -24px;
+            /* extend to section edges so sticky bg covers cleanly */
         }
 
-        .logs-table-frame::before,
-        .logs-table-frame::after {
-            content: "";
-            position: absolute;
-            top: 0;
-            bottom: 0;
-            width: 56px;
-            pointer-events: none;
-            z-index: 5;
-            opacity: 0;
-            transition: opacity 180ms ease;
+        .logs-sticky-head {
+            position: sticky;
+            top: var(--logs-head-top);
+            z-index: 30;
+            background: var(--bg-subtle);
+            padding: 0 24px;
+            /* a soft drop-shadow that only appears once the head has actually
+               pinned (i.e. content has scrolled beneath it) */
+            box-shadow: 0 8px 16px -12px rgba(0, 0, 0, 0);
+            transition: box-shadow 200ms ease;
         }
 
-        .logs-table-frame::before {
-            left: 0;
-            background: linear-gradient(to right,
-                    var(--bg-subtle) 0%,
-                    rgba(16, 16, 20, 0.85) 40%,
-                    rgba(16, 16, 20, 0) 100%);
+        .logs-sticky-head.is-pinned {
+            box-shadow: 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+            border-bottom: 1px solid var(--border-light);
         }
 
-        .logs-table-frame::after {
-            right: 0;
-            background: linear-gradient(to left,
-                    var(--bg-subtle) 0%,
-                    rgba(16, 16, 20, 0.85) 40%,
-                    rgba(16, 16, 20, 0) 100%);
-        }
-
-        .logs-table-frame[data-scroll-left="true"]::before {
-            opacity: 1;
-        }
-
-        .logs-table-frame[data-scroll-right="true"]::after {
-            opacity: 1;
-        }
-
-        /* Subtle "scroll for more" chevron, only when overflowing right. */
-        .logs-table-frame[data-scroll-right="true"]::after {
-            background:
-                linear-gradient(to left,
-                    var(--bg-subtle) 0%,
-                    rgba(16, 16, 20, 0.85) 40%,
-                    rgba(16, 16, 20, 0) 100%),
-                radial-gradient(circle at 80% 50%,
-                    var(--accent-dim) 0%,
-                    transparent 60%);
-        }
-
-        #logs-table-wrap {
-            overflow-x: auto;
+        /* Thin horizontal scrollbar strip placed ABOVE the column headers. */
+        .logs-h-scroll {
+            overflow-x: scroll;
             overflow-y: hidden;
-            scrollbar-color: var(--border) transparent;
+            height: 14px;
+            margin-top: 4px;
+            scrollbar-color: var(--accent) var(--bg-page);
             scrollbar-width: thin;
+            border-top: 1px solid var(--border-light);
+            border-bottom: 1px solid var(--border-light);
+            background: linear-gradient(to bottom,
+                    rgba(0, 0, 0, 0.25),
+                    transparent);
         }
 
-        #logs-table-wrap::-webkit-scrollbar {
-            height: 8px;
+        .logs-h-scroll::-webkit-scrollbar {
+            height: 10px;
         }
 
-        #logs-table-wrap::-webkit-scrollbar-track {
-            background: transparent;
+        .logs-h-scroll::-webkit-scrollbar-track {
+            background: var(--bg-page);
         }
 
-        #logs-table-wrap::-webkit-scrollbar-thumb {
+        .logs-h-scroll::-webkit-scrollbar-thumb {
             background: var(--border);
-            border-radius: 4px;
+            border-radius: 5px;
+            border: 2px solid var(--bg-page);
         }
 
-        #logs-table-wrap::-webkit-scrollbar-thumb:hover {
+        .logs-h-scroll::-webkit-scrollbar-thumb:hover {
             background: var(--accent);
         }
 
-        /* Logs table column behaviors. */
-        #logs-table-wrap table {
-            min-width: 760px;
-            table-layout: auto;
+        .logs-h-scroll-spacer {
+            height: 1px;
+            /* width is set in JS to match the body table's scrollWidth */
+            width: var(--logs-min-width);
         }
 
-        #logs-table-wrap td.col-upstream {
-            max-width: 240px;
+        /* Header-only table, clipped and translated horizontally to mirror
+           the body wrap's scrollLeft. */
+        .logs-header-clip {
+            overflow: hidden;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .logs-header-table {
+            width: 100%;
+            min-width: var(--logs-min-width);
+            border-collapse: collapse;
+            table-layout: fixed;
+            will-change: transform;
+        }
+
+        .logs-header-table th {
+            color: var(--text-muted);
+            font-weight: var(--weight-medium);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            text-align: left;
+            padding: 10px 12px;
+            background: var(--bg-subtle);
+        }
+
+        .logs-header-table th.col-ms {
+            text-align: right;
+            padding-right: 16px;
+        }
+
+        /* Body wrap — only contains tbody. Real horizontal scroll lives here
+           but its native scrollbar is hidden because the proxy strip above
+           is the visible one. */
+        #logs-table-wrap {
+            overflow-x: auto;
+            overflow-y: hidden;
+            padding: 0 24px;
+            /* hide the native scrollbar — proxy strip above replaces it */
+            scrollbar-width: none;
+        }
+
+        #logs-table-wrap::-webkit-scrollbar {
+            display: none;
+        }
+
+        #logs-table-wrap table.logs-body-table {
+            width: 100%;
+            min-width: var(--logs-min-width);
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        #logs-table-wrap td {
+            padding: 10px 12px;
+            font-size: 13px;
+            border-bottom: 1px solid var(--border-light);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
+        }
+
+        #logs-table-wrap tr:hover {
+            background: rgba(0, 212, 170, 0.03);
+        }
+
+        /* Column-specific cell styles. The column widths themselves come from
+           the shared <colgroup>. */
+        #logs-table-wrap td.col-upstream {
             font-family: var(--font-mono);
             font-size: 12px;
             color: var(--text-secondary);
         }
 
-        #logs-table-wrap td.col-upstream:hover {
-            color: var(--text-primary);
-        }
-
-        #logs-table-wrap th.col-ms,
+        .logs-header-table th.col-ms,
         #logs-table-wrap td.col-ms {
             text-align: right;
             font-variant-numeric: tabular-nums;
             font-family: var(--font-mono);
             white-space: nowrap;
             color: var(--text-muted);
-            width: 1%;
             padding-right: 16px;
         }
 
@@ -798,6 +860,11 @@
 
         #logs-table-wrap td.col-ms.is-fast {
             color: var(--color-green);
+        }
+
+        #logsSentinel,
+        #logsStatus {
+            padding: 0 24px;
         }
 
         .panel {
@@ -1963,66 +2030,103 @@
         <!-- ==================== LOGS MODE ==================== -->
         <div id="panelLogs" class="panel">
             <div class="section">
-                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
-                    <h2>Query Log</h2>
-                    <div class="auto-refresh-toggle">
-                        <label>
-                            <input type="checkbox" id="logsAutoRefresh" onchange="toggleLogsAutoRefresh(this.checked)">
-                            Auto-refresh
-                        </label>
-                        <button type="button" class="btn btn-sm" id="logsRefreshBtn" onclick="resetAndLoadLogs()">Refresh</button>
-                    </div>
-                </div>
-
-                <div class="logs-settings">
-                    <label>
-                        Query log retention:
-                        <input type="number" id="logRetentionInput" min="1" max="90" value="7">
-                        days
-                    </label>
-                    <label>
-                        Statistics retention:
-                        <input type="number" id="statsRetentionInput" min="1" max="365" value="90">
-                        days
-                    </label>
-                    <button type="button" class="btn btn-sm" onclick="saveLogSettings()">Save</button>
-                    <label style="margin-left: auto;">
-                        <input type="checkbox" id="logAnonIpCheckbox" onchange="saveLogSettings()">
-                        Anonymize client IPs
-                    </label>
-                </div>
-
-                <div class="logs-controls">
-                    <input type="text" id="logSearchInput" placeholder="Search domains, IPs, sources..."
-                        oninput="debounceLogSearch()">
-                    <select id="logStatusFilter" onchange="resetAndLoadLogs()">
-                        <option value="">All statuses</option>
-                        <option value="allowed">Allowed</option>
-                        <option value="blocked">Blocked</option>
-                        <option value="rewritten">Rewritten</option>
-                    </select>
-                </div>
-
                 <div class="logs-table-frame">
+                    <div class="logs-sticky-head" id="logsStickyHead">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; padding-top: 24px;">
+                            <h2 style="margin: 0;">Query Log</h2>
+                            <div class="auto-refresh-toggle">
+                                <label>
+                                    <input type="checkbox" id="logsAutoRefresh" onchange="toggleLogsAutoRefresh(this.checked)">
+                                    Auto-refresh
+                                </label>
+                                <button type="button" class="btn btn-sm" id="logsRefreshBtn" onclick="resetAndLoadLogs()">Refresh</button>
+                            </div>
+                        </div>
+
+                        <div class="logs-settings">
+                            <label>
+                                Query log retention:
+                                <input type="number" id="logRetentionInput" min="1" max="90" value="7">
+                                days
+                            </label>
+                            <label>
+                                Statistics retention:
+                                <input type="number" id="statsRetentionInput" min="1" max="365" value="90">
+                                days
+                            </label>
+                            <button type="button" class="btn btn-sm" onclick="saveLogSettings()">Save</button>
+                            <label style="margin-left: auto;">
+                                <input type="checkbox" id="logAnonIpCheckbox" onchange="saveLogSettings()">
+                                Anonymize client IPs
+                            </label>
+                        </div>
+
+                        <div class="logs-controls">
+                            <input type="text" id="logSearchInput" placeholder="Search domains, IPs, sources..."
+                                oninput="debounceLogSearch()">
+                            <select id="logStatusFilter" onchange="resetAndLoadLogs()">
+                                <option value="">All statuses</option>
+                                <option value="allowed">Allowed</option>
+                                <option value="blocked">Blocked</option>
+                                <option value="rewritten">Rewritten</option>
+                            </select>
+                        </div>
+
+                        <!-- Horizontal scrollbar proxy: real scroll element,
+                             positioned above the column names. The inner
+                             spacer's width is set to the body table's
+                             scrollWidth in JS. -->
+                        <div class="logs-h-scroll" id="logsHScroll" aria-hidden="true">
+                            <div class="logs-h-scroll-spacer" id="logsHScrollSpacer"></div>
+                        </div>
+
+                        <!-- Header-only table, clipped + transformed to mirror
+                             the body wrap's scrollLeft. -->
+                        <div class="logs-header-clip" id="logsHeaderClip">
+                            <table class="logs-header-table" id="logsHeaderTable">
+                                <colgroup>
+                                    <col style="width: var(--c-time)">
+                                    <col>
+                                    <col style="width: var(--c-type)">
+                                    <col style="width: var(--c-client)">
+                                    <col style="width: var(--c-status)">
+                                    <col style="width: var(--c-source)">
+                                    <col style="width: var(--c-upstream)">
+                                    <col style="width: var(--c-ms)">
+                                </colgroup>
+                                <thead>
+                                    <tr>
+                                        <th>Time</th>
+                                        <th>Domain</th>
+                                        <th>Type</th>
+                                        <th>Client</th>
+                                        <th>Status</th>
+                                        <th>Source</th>
+                                        <th>Upstream</th>
+                                        <th class="col-ms">Time (ms)</th>
+                                    </tr>
+                                </thead>
+                            </table>
+                        </div>
+                    </div>
+
                     <div id="logs-table-wrap">
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Time</th>
-                                    <th>Domain</th>
-                                    <th>Type</th>
-                                    <th>Client</th>
-                                    <th>Status</th>
-                                    <th>Source</th>
-                                    <th>Upstream</th>
-                                    <th class="col-ms">Time (ms)</th>
-                                </tr>
-                            </thead>
+                        <table class="logs-body-table">
+                            <colgroup>
+                                <col style="width: var(--c-time)">
+                                <col>
+                                <col style="width: var(--c-type)">
+                                <col style="width: var(--c-client)">
+                                <col style="width: var(--c-status)">
+                                <col style="width: var(--c-source)">
+                                <col style="width: var(--c-upstream)">
+                                <col style="width: var(--c-ms)">
+                            </colgroup>
                             <tbody id="logsBody"></tbody>
                         </table>
-                        <div id="logsSentinel"></div>
-                        <div id="logsStatus" class="logs-status"></div>
                     </div>
+                    <div id="logsSentinel"></div>
+                    <div id="logsStatus" class="logs-status"></div>
                 </div>
             </div>
         </div>
@@ -4489,31 +4593,101 @@
             return tr;
         }
 
-        // Edge-fade indicators for the logs table: show/hide left and right
-        // fades depending on whether the wrap is actually scrollable in that
-        // direction. Cheap, runs on scroll/resize/load.
-        function updateLogsScrollIndicators() {
-            const wrap = document.getElementById('logs-table-wrap');
-            if (!wrap) return;
-            const frame = wrap.parentElement;
-            if (!frame || !frame.classList.contains('logs-table-frame')) return;
-            const max = wrap.scrollWidth - wrap.clientWidth;
-            const left = wrap.scrollLeft;
-            const overflowing = max > 1;
-            frame.dataset.scrollLeft = (overflowing && left > 1) ? 'true' : 'false';
-            frame.dataset.scrollRight = (overflowing && left < max - 1) ? 'true' : 'false';
+        // Logs table scroll-sync. The architecture has THREE elements that
+        // need to share a horizontal scroll position:
+        //   1. #logs-table-wrap     — the real scroll container (body table)
+        //   2. #logsHScroll         — proxy scrollbar strip above the headers
+        //   3. #logsHeaderTable     — moved with transform: translateX
+        // We also keep the spacer width in sync with the body table's
+        // scrollWidth so the proxy scrollbar reflects real overflow, and we
+        // toggle a `.is-pinned` class on the sticky head when the user has
+        // scrolled past the section top so it gets a subtle drop shadow.
+        let _logsSyncing = false;
+        function syncLogsHorizontalScroll(source) {
+            if (_logsSyncing) return;
+            _logsSyncing = true;
+            try {
+                const wrap = document.getElementById('logs-table-wrap');
+                const proxy = document.getElementById('logsHScroll');
+                const header = document.getElementById('logsHeaderTable');
+                if (!wrap || !proxy || !header) return;
+                let left;
+                if (source === 'proxy') {
+                    left = proxy.scrollLeft;
+                    wrap.scrollLeft = left;
+                } else {
+                    left = wrap.scrollLeft;
+                    proxy.scrollLeft = left;
+                }
+                header.style.transform = 'translateX(' + (-left) + 'px)';
+            } finally {
+                _logsSyncing = false;
+            }
         }
 
-        (function initLogsScrollIndicators() {
+        function updateLogsSpacerWidth() {
             const wrap = document.getElementById('logs-table-wrap');
-            if (!wrap) return;
-            wrap.addEventListener('scroll', updateLogsScrollIndicators, { passive: true });
-            window.addEventListener('resize', updateLogsScrollIndicators);
-            // Recompute when row layout changes (rows added by infinite scroll,
-            // filter changes, etc.).
-            const obs = new MutationObserver(updateLogsScrollIndicators);
-            obs.observe(document.getElementById('logsBody'), { childList: true });
-            updateLogsScrollIndicators();
+            const spacer = document.getElementById('logsHScrollSpacer');
+            if (!wrap || !spacer) return;
+            // scrollWidth reflects the actual rendered width of the body
+            // table including the min-width fallback when tbody is empty.
+            const w = Math.max(wrap.scrollWidth, wrap.clientWidth);
+            spacer.style.width = w + 'px';
+            // Re-run sync in case scrollLeft was clamped by the resize.
+            syncLogsHorizontalScroll('wrap');
+        }
+
+        function updateLogsHeadPinned() {
+            const head = document.getElementById('logsStickyHead');
+            if (!head) return;
+            const rect = head.getBoundingClientRect();
+            const headerH = parseFloat(
+                getComputedStyle(document.documentElement)
+                    .getPropertyValue('--logs-head-top')
+            ) || 65;
+            // If the sticky head's top is at (or below) the global header,
+            // it has pinned. Use a 1px tolerance for sub-pixel rounding.
+            head.classList.toggle('is-pinned', rect.top <= headerH + 1);
+        }
+
+        (function initLogsTableSync() {
+            // Measure the global .header height once and expose it so the
+            // sticky head pins below it instead of at viewport top.
+            const globalHeader = document.querySelector('.header');
+            if (globalHeader) {
+                const apply = () => {
+                    document.documentElement.style.setProperty(
+                        '--logs-head-top',
+                        globalHeader.getBoundingClientRect().height + 'px'
+                    );
+                };
+                apply();
+                window.addEventListener('resize', apply);
+            }
+
+            const wrap = document.getElementById('logs-table-wrap');
+            const proxy = document.getElementById('logsHScroll');
+            if (!wrap || !proxy) return;
+
+            wrap.addEventListener('scroll', () => syncLogsHorizontalScroll('wrap'), { passive: true });
+            proxy.addEventListener('scroll', () => syncLogsHorizontalScroll('proxy'), { passive: true });
+            window.addEventListener('resize', () => {
+                updateLogsSpacerWidth();
+                updateLogsHeadPinned();
+            });
+            window.addEventListener('scroll', updateLogsHeadPinned, { passive: true });
+
+            // Recompute when rows change (infinite scroll, filter, refresh).
+            const body = document.getElementById('logsBody');
+            if (body) {
+                const obs = new MutationObserver(() => {
+                    updateLogsSpacerWidth();
+                });
+                obs.observe(body, { childList: true });
+            }
+
+            updateLogsSpacerWidth();
+            updateLogsHeadPinned();
         })();
 
         async function loadLogs() {
