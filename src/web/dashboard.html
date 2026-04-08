@@ -731,43 +731,52 @@
             border-bottom: 1px solid var(--border-light);
         }
 
-        /* Thin horizontal scrollbar strip placed ABOVE the column headers. */
+        /* Horizontal scrollbar strip placed ABOVE the column headers.
+           The native scrollbar is fully hidden; we draw our own thumb
+           inside so the indicator is always visible (GNOME/overlay
+           scrollbars otherwise fade out when idle). */
         .logs-h-scroll {
+            position: relative;
             overflow-x: scroll;
             overflow-y: hidden;
             height: 14px;
             margin-top: 4px;
-            scrollbar-color: var(--accent) var(--bg-page);
-            scrollbar-width: thin;
             border-top: 1px solid var(--border-light);
             border-bottom: 1px solid var(--border-light);
-            /* opaque so rows scrolling beneath the sticky head never bleed
-               through this strip */
-            background: var(--bg-subtle);
+            background: var(--bg-page);
+            /* hide native bar — we render our own */
+            scrollbar-width: none;
+            cursor: pointer;
         }
 
         .logs-h-scroll::-webkit-scrollbar {
-            height: 10px;
-        }
-
-        .logs-h-scroll::-webkit-scrollbar-track {
-            background: var(--bg-page);
-        }
-
-        .logs-h-scroll::-webkit-scrollbar-thumb {
-            background: var(--border);
-            border-radius: 5px;
-            border: 2px solid var(--bg-page);
-        }
-
-        .logs-h-scroll::-webkit-scrollbar-thumb:hover {
-            background: var(--accent);
+            display: none;
         }
 
         .logs-h-scroll-spacer {
             height: 1px;
-            /* width is set in JS to match the body table's scrollWidth */
             width: var(--logs-min-width);
+        }
+
+        /* Custom always-visible thumb. Position is driven by JS from
+           wrap.scrollLeft; width reflects the viewport/content ratio.
+           When content fits, thumb spans the full track (visual cue that
+           there is nothing more to scroll to). */
+        .logs-h-scroll-thumb {
+            position: absolute;
+            top: 2px;
+            bottom: 2px;
+            left: 0;
+            width: 100%;
+            background: var(--accent);
+            border-radius: 4px;
+            pointer-events: none;
+            transition: background 150ms ease;
+        }
+
+        .logs-h-scroll:hover .logs-h-scroll-thumb {
+            background: var(--accent);
+            filter: brightness(1.15);
         }
 
         /* Header-only table, clipped and translated horizontally to mirror
@@ -2084,6 +2093,7 @@
                              scrollWidth in JS. -->
                         <div class="logs-h-scroll" id="logsHScroll" aria-hidden="true">
                             <div class="logs-h-scroll-spacer" id="logsHScrollSpacer"></div>
+                            <div class="logs-h-scroll-thumb" id="logsHScrollThumb"></div>
                         </div>
 
                         <!-- Header-only table, clipped + transformed to mirror
@@ -4609,6 +4619,23 @@
         // toggle a `.is-pinned` class on the sticky head when the user has
         // scrolled past the section top so it gets a subtle drop shadow.
         let _logsSyncing = false;
+        function updateLogsThumb() {
+            const wrap = document.getElementById('logs-table-wrap');
+            const proxy = document.getElementById('logsHScroll');
+            const thumb = document.getElementById('logsHScrollThumb');
+            if (!wrap || !proxy || !thumb) return;
+            const trackW = proxy.clientWidth;
+            const viewW = wrap.clientWidth;
+            const contentW = Math.max(wrap.scrollWidth, viewW);
+            if (trackW <= 0 || contentW <= 0) return;
+            const ratio = Math.min(1, viewW / contentW);
+            const thumbW = Math.max(24, Math.round(trackW * ratio));
+            const maxScroll = Math.max(0, contentW - viewW);
+            const progress = maxScroll > 0 ? wrap.scrollLeft / maxScroll : 0;
+            const thumbLeft = Math.round((trackW - thumbW) * progress);
+            thumb.style.width = thumbW + 'px';
+            thumb.style.left = thumbLeft + 'px';
+        }
         function syncLogsHorizontalScroll(source) {
             if (_logsSyncing) return;
             _logsSyncing = true;
@@ -4626,6 +4653,7 @@
                     proxy.scrollLeft = left;
                 }
                 header.style.transform = 'translateX(' + (-left) + 'px)';
+                updateLogsThumb();
             } finally {
                 _logsSyncing = false;
             }
@@ -4650,6 +4678,7 @@
             spacer.style.width = w + 'px';
             // Re-run sync in case scrollLeft was clamped by the resize.
             syncLogsHorizontalScroll('wrap');
+            updateLogsThumb();
         }
 
         function updateLogsHeadPinned() {
