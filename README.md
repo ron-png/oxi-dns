@@ -247,6 +247,7 @@ Please note that this list is not a promise, rather thoughts I might change my m
 
 ### Goals for Version 2:
 - Add a "Test" button for the upstream DNS servers (feature)
+- add oxi-dns cli commands. (adding certificate, rebooting the server) 
 - Security enhancements
   - DNSsec
   - DNScrypt
@@ -265,5 +266,4 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - Look into RFC Compliance
 - Besides User Login and password, LDAP as well
 - Not only single entries, but complete Allowlist section
-- explore whether persistent cache is feaseble or not
 - If my finances allow, a security audit of the code (option for Donations, maybe a donation button?)
