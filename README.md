@@ -12,6 +12,23 @@ Supports plain DNS (UDP), DNS-over-TLS (DoT), DNS-over-HTTPS (DoH), and DNS-over
 
 
 
+## Quick Start
+
+Get Oxi-DNS running in under a minute:
+
+```bash
+# Install (Linux, systemd)
+curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh" | sh
+
+# Or run with Docker
+docker run -d --name oxi-dns \
+  -p 53:53/udp -p 53:53/tcp -p 9853:9853 \
+  -v oxi-dns-config:/etc/oxi-dns \
+  ghcr.io/ron-png/oxi-dns:latest
+```
+
+Then open the dashboard at **http://<host>:9853** and point a device's DNS at the server's IP. That's it — ads and trackers are blocked network-wide. See [Installation](#installation) and [Configuration](#configuration) for details.
+
 ## Why Oxi-DNS?
 
 - **Single binary, zero dependencies** — no Python, no PHP, no database server to maintain
