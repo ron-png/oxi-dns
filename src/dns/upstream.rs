@@ -528,7 +528,11 @@ async fn iterative_walk(
                 }
             }
 
-            // Direct answers matching the requested type — done.
+            // Direct answers matching the requested type — done. Authoritative
+            // servers commonly return a CNAME chain plus the final RRset of
+            // the requested type in a single response; include any CNAMEs
+            // from the same answer section so the client sees a record
+            // whose owner name matches the original question.
             let direct: Vec<Record> = resp
                 .answers()
                 .iter()
@@ -536,6 +540,15 @@ async fn iterative_walk(
                 .cloned()
                 .collect();
             if !direct.is_empty() {
+                if qtype != RecordType::CNAME {
+                    let inline_cnames: Vec<Record> = resp
+                        .answers()
+                        .iter()
+                        .filter(|r| r.record_type() == RecordType::CNAME)
+                        .cloned()
+                        .collect();
+                    accumulated.extend(inline_cnames);
+                }
                 accumulated.extend(direct);
                 return Ok(WalkOutcome::Answers(accumulated));
             }
