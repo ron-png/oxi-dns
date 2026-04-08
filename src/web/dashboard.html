@@ -732,30 +732,18 @@
         }
 
         /* Horizontal scrollbar strip placed ABOVE the column headers.
-           The native scrollbar is fully hidden; we draw our own thumb
-           inside so the indicator is always visible (GNOME/overlay
-           scrollbars otherwise fade out when idle). */
+           A plain static track — scrolling is driven entirely by JS via
+           wrap.scrollLeft, so the track itself never scrolls. The thumb
+           inside is absolutely positioned and moves by setting its left. */
         .logs-h-scroll {
             position: relative;
-            overflow-x: scroll;
-            overflow-y: hidden;
+            overflow: hidden;
             height: 14px;
             margin-top: 4px;
             border-top: 1px solid var(--border-light);
             border-bottom: 1px solid var(--border-light);
             background: var(--bg-page);
-            /* hide native bar — we render our own */
-            scrollbar-width: none;
             cursor: pointer;
-        }
-
-        .logs-h-scroll::-webkit-scrollbar {
-            display: none;
-        }
-
-        .logs-h-scroll-spacer {
-            height: 1px;
-            width: var(--logs-min-width);
         }
 
         /* Custom always-visible thumb. Position is driven by JS from
@@ -2096,7 +2084,6 @@
                              spacer's width is set to the body table's
                              scrollWidth in JS. -->
                         <div class="logs-h-scroll" id="logsHScroll" aria-hidden="true">
-                            <div class="logs-h-scroll-spacer" id="logsHScrollSpacer"></div>
                             <div class="logs-h-scroll-thumb" id="logsHScrollThumb"></div>
                         </div>
 
@@ -4640,48 +4627,19 @@
             thumb.style.width = thumbW + 'px';
             thumb.style.left = thumbLeft + 'px';
         }
-        function syncLogsHorizontalScroll(source) {
-            if (_logsSyncing) return;
-            _logsSyncing = true;
-            try {
-                const wrap = document.getElementById('logs-table-wrap');
-                const proxy = document.getElementById('logsHScroll');
-                const header = document.getElementById('logsHeaderTable');
-                if (!wrap || !proxy || !header) return;
-                let left;
-                if (source === 'proxy') {
-                    left = proxy.scrollLeft;
-                    wrap.scrollLeft = left;
-                } else {
-                    left = wrap.scrollLeft;
-                    proxy.scrollLeft = left;
-                }
-                header.style.transform = 'translateX(' + (-left) + 'px)';
-                updateLogsThumb();
-            } finally {
-                _logsSyncing = false;
-            }
+        function syncLogsHorizontalScroll() {
+            const wrap = document.getElementById('logs-table-wrap');
+            const header = document.getElementById('logsHeaderTable');
+            if (!wrap || !header) return;
+            const left = wrap.scrollLeft;
+            header.style.transform = 'translateX(' + (-left) + 'px)';
+            updateLogsThumb();
         }
 
         function updateLogsSpacerWidth() {
-            const wrap = document.getElementById('logs-table-wrap');
-            const proxy = document.getElementById('logsHScroll');
-            const spacer = document.getElementById('logsHScrollSpacer');
-            if (!wrap || !proxy || !spacer) return;
-            // The proxy strip and the body wrap can have different clientWidths
-            // (e.g. the wrap's padding-box includes its horizontal padding while
-            // the proxy sits inside a padded ancestor). We want their max
-            // scrollLeft values to match so dragging the proxy thumb to the end
-            // lines the headers up exactly with the end of the body content.
-            //   wrap_max   = wrap.scrollWidth - wrap.clientWidth
-            //   proxy_max  = spacer.width     - proxy.clientWidth
-            // Solving for spacer:
-            //   spacer = wrap.scrollWidth - wrap.clientWidth + proxy.clientWidth
-            const overflow = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
-            const w = Math.max(proxy.clientWidth + overflow, proxy.clientWidth);
-            spacer.style.width = w + 'px';
-            // Re-run sync in case scrollLeft was clamped by the resize.
-            syncLogsHorizontalScroll('wrap');
+            // No spacer anymore — the proxy track is a static element and
+            // scroll position is driven entirely from wrap.scrollLeft. This
+            // is kept as the "something changed, recompute" entry point.
             updateLogsThumb();
         }
 
@@ -4717,8 +4675,7 @@
             const proxy = document.getElementById('logsHScroll');
             if (!wrap || !proxy) return;
 
-            wrap.addEventListener('scroll', () => syncLogsHorizontalScroll('wrap'), { passive: true });
-            proxy.addEventListener('scroll', () => syncLogsHorizontalScroll('proxy'), { passive: true });
+            wrap.addEventListener('scroll', syncLogsHorizontalScroll, { passive: true });
 
             // Drag support for the custom thumb. The native scrollbar is
             // hidden, so we translate pointer movement on the thumb directly
