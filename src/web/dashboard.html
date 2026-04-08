@@ -770,8 +770,12 @@
             width: 100%;
             background: var(--accent);
             border-radius: 4px;
-            pointer-events: none;
+            cursor: grab;
             transition: background 150ms ease;
+        }
+
+        .logs-h-scroll-thumb.is-dragging {
+            cursor: grabbing;
         }
 
         .logs-h-scroll:hover .logs-h-scroll-thumb {
@@ -4715,6 +4719,50 @@
 
             wrap.addEventListener('scroll', () => syncLogsHorizontalScroll('wrap'), { passive: true });
             proxy.addEventListener('scroll', () => syncLogsHorizontalScroll('proxy'), { passive: true });
+
+            // Drag support for the custom thumb. The native scrollbar is
+            // hidden, so we translate pointer movement on the thumb directly
+            // into wrap.scrollLeft, and also support click-on-track to jump.
+            const thumb = document.getElementById('logsHScrollThumb');
+            if (thumb) {
+                let dragState = null;
+                const scrollFromPointer = (clientX) => {
+                    const trackRect = proxy.getBoundingClientRect();
+                    const trackW = trackRect.width;
+                    const thumbW = thumb.offsetWidth;
+                    const travel = Math.max(0, trackW - thumbW);
+                    if (travel <= 0) return;
+                    const local = Math.max(0, Math.min(travel,
+                        clientX - trackRect.left - (dragState ? dragState.grabOffset : thumbW / 2)));
+                    const progress = local / travel;
+                    const maxScroll = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+                    wrap.scrollLeft = Math.round(progress * maxScroll);
+                };
+                thumb.addEventListener('pointerdown', (e) => {
+                    e.preventDefault();
+                    const thumbRect = thumb.getBoundingClientRect();
+                    dragState = { grabOffset: e.clientX - thumbRect.left };
+                    thumb.classList.add('is-dragging');
+                    thumb.setPointerCapture(e.pointerId);
+                });
+                thumb.addEventListener('pointermove', (e) => {
+                    if (!dragState) return;
+                    scrollFromPointer(e.clientX);
+                });
+                const endDrag = (e) => {
+                    if (!dragState) return;
+                    dragState = null;
+                    thumb.classList.remove('is-dragging');
+                    try { thumb.releasePointerCapture(e.pointerId); } catch (_) {}
+                };
+                thumb.addEventListener('pointerup', endDrag);
+                thumb.addEventListener('pointercancel', endDrag);
+                // Click on empty track area jumps the thumb to that spot.
+                proxy.addEventListener('pointerdown', (e) => {
+                    if (e.target === thumb) return;
+                    scrollFromPointer(e.clientX);
+                });
+            }
             window.addEventListener('resize', () => {
                 updateLogsSpacerWidth();
                 updateLogsHeadPinned();
