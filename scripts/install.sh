@@ -153,16 +153,26 @@ check_root() {
         export ALREADY_ELEVATED=1
 
         # Pick an available privilege escalation tool.
-        # FreeBSD/OpenBSD commonly ship doas instead of sudo; fall back to su.
+        # FreeBSD/OpenBSD commonly ship doas instead of sudo.
+        # We deliberately do NOT use `su` here: on BSDs it requires wheel
+        # group membership and reads the password from the controlling TTY,
+        # which is unreliable when the script is piped from curl.
         ELEVATE=""
         if command -v sudo >/dev/null 2>&1; then
             ELEVATE="sudo"
-        elif command -v doas >/dev/null 2>&1; then
+        elif command -v doas >/dev/null 2>&1 && [ -f /etc/doas.conf ]; then
             ELEVATE="doas"
-        elif command -v su >/dev/null 2>&1; then
-            ELEVATE="su"
         else
-            log_error "This script requires root privileges. Please run as root or install sudo/doas."
+            log_error "This script requires root privileges."
+            log_error ""
+            log_error "Neither 'sudo' nor a configured 'doas' is available."
+            log_error ""
+            log_error "Please either:"
+            log_error "  1. Re-run this command as root (e.g. 'su -' first, then paste the install command), or"
+            log_error "  2. Configure doas (OpenBSD/FreeBSD):"
+            log_error "       echo 'permit persist :wheel' | tee /etc/doas.conf"
+            log_error "       (and make sure your user is in the 'wheel' group)"
+            log_error "  3. Install and configure sudo for your user."
             exit 1
         fi
 
@@ -180,7 +190,6 @@ check_root() {
         case "$ELEVATE" in
             sudo) sudo sh "$SCRIPT_PATH" $ORIG_ARGS ;;
             doas) doas sh "$SCRIPT_PATH" $ORIG_ARGS ;;
-            su)   su root -c "sh \"$SCRIPT_PATH\" $ORIG_ARGS" ;;
         esac
         exit $?
     fi
@@ -1158,12 +1167,9 @@ check_root() {
         if command -v sudo >/dev/null 2>&1; then
             log_info "Elevating privileges using sudo..."
             exec sudo sh "$0" "$@"
-        elif command -v doas >/dev/null 2>&1; then
+        elif command -v doas >/dev/null 2>&1 && [ -f /etc/doas.conf ]; then
             log_info "Elevating privileges using doas..."
             exec doas sh "$0" "$@"
-        elif command -v su >/dev/null 2>&1; then
-            log_info "Elevating privileges using su..."
-            exec su root -c "sh \"$0\" $*"
         else
             log_error "This script requires root privileges. Please run as root or install sudo/doas."
             exit 1
