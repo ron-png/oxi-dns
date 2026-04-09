@@ -642,6 +642,7 @@ do_install() {
     log_info "Binary installed: ${INSTALL_DIR}/${BINARY_NAME}"
 
     # Create symlink in /usr/local/bin
+    mkdir -p /usr/local/bin
     ln -sf "${INSTALL_DIR}/${BINARY_NAME}" "/usr/local/bin/${BINARY_NAME}"
     log_info "Symlink created: /usr/local/bin/${BINARY_NAME}"
 
