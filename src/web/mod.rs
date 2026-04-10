@@ -519,6 +519,7 @@ pub async fn run_web_server(
                     };
                     let tls_acceptor = tls_acceptor.clone();
                     let app = https_app.clone();
+                    let peer_addr = _peer_addr;
                     tokio::spawn(async move {
                         let tls_stream = match tls_acceptor.accept(tcp_stream).await {
                             Ok(s) => s,
@@ -529,7 +530,9 @@ pub async fn run_web_server(
                         };
                         let io = hyper_util::rt::TokioIo::new(tls_stream);
                         let service = hyper::service::service_fn(
-                            move |req: hyper::Request<hyper::body::Incoming>| {
+                            move |mut req: hyper::Request<hyper::body::Incoming>| {
+                                // Inject ConnectInfo so handlers can access the peer address
+                                req.extensions_mut().insert(ConnectInfo(peer_addr));
                                 let mut app = app.clone();
                                 async move { app.call(req).await }
                             },
