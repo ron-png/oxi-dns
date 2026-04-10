@@ -1477,144 +1477,23 @@
 
         /* .channel-select styling now handled by global select rules */
 
-        .tls-section {
-            margin-top: 24px;
-            padding-top: 20px;
-            border-top: 1px solid var(--border);
-        }
-
-        .tls-section h3 {
-            font-size: 15px;
-            margin-bottom: 12px;
-            color: var(--text-primary);
-        }
-
-        .tls-status {
-            padding: 12px 14px;
-            background: var(--bg-page);
-            border-radius: 8px;
-            margin-bottom: 12px;
-        }
-
-        .tls-status .tls-label {
-            font-size: 12px;
-            color: var(--text-muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-
-        .tls-status .tls-value {
-            font-size: 14px;
-            color: var(--text-primary);
-            margin-top: 2px;
-        }
-
-        .tls-status-row {
-            display: flex;
-            gap: 16px;
-            flex-wrap: wrap;
-        }
-
-        .tls-status-item {
-            flex: 1;
-            min-width: 120px;
-        }
-
-        .tls-upload {
-            margin-top: 12px;
-        }
-
-        .tls-tabs {
-            display: flex;
-            gap: 4px;
-            margin-bottom: 12px;
-        }
-
-        .tls-tab {
-            padding: 6px 14px;
-            border-radius: 6px;
-            font-size: 12px;
-            cursor: pointer;
-            border: 1px solid var(--border);
-            background: transparent;
-            color: var(--text-muted);
-        }
-
-        .tls-tab.active {
-            border-color: var(--accent);
-            color: var(--accent);
-            background: var(--accent-dim);
-        }
-
-        .tls-file-input {
-            margin-bottom: 8px;
-        }
-
-        .tls-file-input label {
-            font-size: 12px;
-            color: var(--text-secondary);
-            display: block;
-            margin-bottom: 4px;
-        }
-
-        .tls-file-input input[type="file"] {
-            font-size: 13px;
-            color: var(--text-secondary);
-        }
-
-        .tls-password {
-            margin-bottom: 10px;
-            display: none;
-        }
-
-        .tls-password.visible {
-            display: block;
-        }
-
-        .tls-password input {
-            width: 100%;
-            background: var(--bg-page);
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 7px 10px;
-            font-size: 13px;
-            color: var(--text-primary);
-            outline: none;
-        }
-
-        .tls-password input:focus {
-            border-color: var(--accent);
-        }
-
-        .tls-actions {
-            display: flex;
-            gap: 8px;
-            margin-top: 10px;
-        }
-
-        .tls-msg {
-            margin-top: 10px;
-            font-size: 13px;
-            padding: 8px 12px;
-            border-radius: 6px;
-            display: none;
-        }
-
-        .tls-msg.visible {
-            display: block;
-        }
-
-        .tls-msg.success {
-            background: rgba(34, 197, 94, 0.08);
-            color: #22c55e;
-            border: 1px solid rgba(34, 197, 94, 0.2);
-        }
-
-        .tls-msg.error {
-            background: rgba(248, 113, 113, 0.08);
-            color: #f87171;
-            border: 1px solid rgba(248, 113, 113, 0.25);
-        }
+        .cert-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
+        .cert-tab { padding: 8px 16px; cursor: pointer; border: none; background: none; color: var(--text-muted); font-size: 13px; border-bottom: 2px solid transparent; }
+        .cert-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+        .cert-tab-content { display: none; }
+        .cert-tab-content.active { display: block; }
+        .cert-info-grid { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; margin-bottom: 16px; }
+        .cert-info-label { color: var(--text-muted); }
+        .cert-info-value { color: var(--text); word-break: break-all; }
+        .acme-progress { margin: 16px 0; }
+        .acme-step { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 13px; color: var(--text-muted); }
+        .acme-step.active { color: var(--text); font-weight: 500; }
+        .acme-step.done { color: var(--text-muted); }
+        .acme-step-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--border); flex-shrink: 0; }
+        .acme-step.active .acme-step-dot { background: var(--accent); }
+        .acme-step.done .acme-step-dot { background: var(--text-muted); }
+        .acme-challenge-box { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 6px; padding: 12px; margin: 12px 0; font-size: 12px; font-family: monospace; word-break: break-all; }
+        .acme-challenge-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; font-family: var(--font); }
 
         .logs-settings {
             display: flex;
@@ -2259,6 +2138,15 @@
                 </div>
             </div>
 
+            <!-- Certificate Management -->
+            <div class="section manage-system-only">
+                <h2>TLS Certificate</h2>
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                    <span style="font-size: 13px; color: var(--text-muted);" id="certSummary">Loading certificate info...</span>
+                    <button type="button" class="btn btn-accent btn-sm" onclick="showCertModal()">Manage Certificates</button>
+                </div>
+            </div>
+
             <!-- User Management (manage_users only) -->
             <div class="section manage-users-only" id="usersSection">
                 <h2>User Management</h2>
@@ -2428,58 +2316,6 @@
                             <button type="button" class="reconfig-btn-dismiss" onclick="dismissBanner()">Dismiss</button>
                             <button type="button" class="reconfig-btn-copy" id="reconfigCopyBtn" onclick="copyReconfigCmd()">Copy</button>
                         </div>
-                    </div>
-                </div>
-                <div class="tls-section manage-system-only">
-                    <h3>TLS Certificate</h3>
-                    <div class="tls-status" id="tlsStatus">
-                        <div class="tls-status-row">
-                            <div class="tls-status-item">
-                                <div class="tls-label">Status</div>
-                                <div class="tls-value" id="tlsCertType">Loading...</div>
-                            </div>
-                            <div class="tls-status-item">
-                                <div class="tls-label">Subject</div>
-                                <div class="tls-value" id="tlsSubject">&mdash;</div>
-                            </div>
-                            <div class="tls-status-item">
-                                <div class="tls-label">Expires</div>
-                                <div class="tls-value" id="tlsExpiry">&mdash;</div>
-                            </div>
-                        </div>
-                    </div>
-                    <div class="tls-upload">
-                        <div class="tls-tabs">
-                            <button type="button" class="tls-tab active" onclick="switchTlsTab('pem')">PEM</button>
-                            <button type="button" class="tls-tab" onclick="switchTlsTab('p12')">PKCS12</button>
-                        </div>
-                        <div id="tls-pem-fields">
-                            <div class="tls-file-input">
-                                <label>Certificate file (chain)</label>
-                                <input type="file" id="tlsCertFile" accept=".pem,.crt,.cer">
-                            </div>
-                            <div class="tls-file-input">
-                                <label>Private key file (optional if in cert file)</label>
-                                <input type="file" id="tlsKeyFile" accept=".pem,.key">
-                            </div>
-                        </div>
-                        <div id="tls-p12-fields" style="display:none;">
-                            <div class="tls-file-input">
-                                <label>PKCS12 file (.pfx / .p12)</label>
-                                <input type="file" id="tlsP12File" accept=".pfx,.p12">
-                            </div>
-                        </div>
-                        <div class="tls-password" id="tlsPasswordField">
-                            <label
-                                style="font-size:12px;color:var(--text-secondary);display:block;margin-bottom:4px;">Password</label>
-                            <input type="password" id="tlsPassword" placeholder="Certificate password">
-                        </div>
-                        <div class="tls-actions">
-                            <button type="button" class="btn btn-sm" onclick="uploadTlsCert()">Upload</button>
-                            <button type="button" class="btn btn-sm" id="tlsRemoveBtn" onclick="removeTlsCert()"
-                                style="display:none;">Remove &amp; use self-signed</button>
-                        </div>
-                        <div class="tls-msg" id="tlsMsg"></div>
                     </div>
                 </div>
                 <div class="setting-row">
@@ -3043,7 +2879,7 @@
                 refreshBlocklistSources();
                 loadLastRefreshed();
                 refreshNetworkSettings();
-                refreshTlsStatus();
+                refreshCertStatus();
                 refreshSystemSettings();
                 refreshReleaseChannel();
                 refreshFeatures();
@@ -3534,89 +3370,272 @@
             refreshUpstreams();
         }
 
-        // ---- TLS Certificate ----
-        let currentTlsTab = 'pem';
+        // ---- Certificate Management ----
+        let acmePollTimer = null;
 
-        function switchTlsTab(tab) {
-            currentTlsTab = tab;
-            document.querySelectorAll('.tls-tab').forEach(t => {
-                t.classList.remove('active');
-            });
-            event.target.classList.add('active');
-            document.getElementById('tls-pem-fields').style.display = tab === 'pem' ? '' : 'none';
-            document.getElementById('tls-p12-fields').style.display = tab === 'p12' ? '' : 'none';
+        function showCertModal() {
+            const html = `
+        <h3>Certificate Management</h3>
+        <div class="cert-tabs">
+            <button class="cert-tab active" onclick="switchCertTab('status', this)">Status</button>
+            <button class="cert-tab" onclick="switchCertTab('acme', this)">Let's Encrypt</button>
+            <button class="cert-tab" onclick="switchCertTab('upload', this)">Manual Upload</button>
+        </div>
+        <div class="cert-tab-content active" id="certTabStatus">
+            <div class="cert-info-grid" id="certInfoGrid">Loading...</div>
+            <div id="certRenewalInfo" style="font-size:13px;color:var(--text-muted);margin-bottom:16px;"></div>
+            <div class="modal-actions">
+                <button class="btn btn-sm" style="background:var(--danger);color:#fff;" onclick="removeTlsCert()">Remove &amp; use self-signed</button>
+            </div>
+        </div>
+        <div class="cert-tab-content" id="certTabAcme">
+            <div class="form-group">
+                <label>Domain</label>
+                <input type="text" id="acmeDomain" placeholder="example.com" />
+            </div>
+            <div class="form-group">
+                <label>Email</label>
+                <input type="email" id="acmeEmail" placeholder="admin@example.com" />
+            </div>
+            <div class="form-group">
+                <label>DNS Provider</label>
+                <select id="acmeProvider" onchange="onAcmeProviderChange()">
+                    <option value="cloudflare">Cloudflare</option>
+                    <option value="manual">Manual DNS</option>
+                </select>
+                <a href="https://github.com/ron-png/oxi-dns/issues/new" target="_blank" rel="noopener" style="font-size:12px;display:block;margin-top:4px;">Suggest a provider</a>
+            </div>
+            <div class="form-group" id="cfTokenGroup">
+                <label>Cloudflare API Token</label>
+                <input type="password" id="acmeCfToken" placeholder="API token with Zone:DNS:Edit permission" />
+            </div>
+            <div class="form-group" style="display:flex;align-items:center;gap:8px;">
+                <input type="checkbox" id="acmeStaging" />
+                <label for="acmeStaging" style="margin:0;font-size:13px;">Use staging environment (for testing)</label>
+            </div>
+            <div id="acmeProgressArea" style="display:none;">
+                <div class="acme-progress" id="acmeProgressSteps"></div>
+                <div id="acmeChallengeDetails" style="display:none;">
+                    <div class="acme-challenge-box">
+                        <div class="acme-challenge-label">TXT Record Name</div>
+                        <div id="acmeChallengeName"></div>
+                        <div class="acme-challenge-label" style="margin-top:8px;">TXT Record Value</div>
+                        <div id="acmeChallengeValue"></div>
+                    </div>
+                    <button class="btn btn-accent btn-sm" onclick="confirmAcmeChallenge()">I've created the record</button>
+                </div>
+            </div>
+            <div id="acmeMsg" style="font-size:13px;margin-top:8px;"></div>
+            <div class="modal-actions" id="acmeActions">
+                <button class="btn btn-accent" onclick="startAcmeIssuance()">Issue Certificate</button>
+            </div>
+        </div>
+        <div class="cert-tab-content" id="certTabUpload">
+            <div class="cert-tabs" style="margin-bottom:12px;">
+                <button class="cert-tab active" onclick="switchUploadTab('pem', this)">PEM</button>
+                <button class="cert-tab" onclick="switchUploadTab('p12', this)">PKCS12</button>
+            </div>
+            <div id="uploadPemTab">
+                <div class="form-group"><label>Certificate (.pem)</label><input type="file" id="uploadCertFile" accept=".pem,.crt,.cer" /></div>
+                <div class="form-group"><label>Private Key (.pem)</label><input type="file" id="uploadKeyFile" accept=".pem,.key" /></div>
+            </div>
+            <div id="uploadP12Tab" style="display:none;">
+                <div class="form-group"><label>PKCS12 File (.p12/.pfx)</label><input type="file" id="uploadP12File" accept=".p12,.pfx" /></div>
+            </div>
+            <div class="form-group" id="uploadPasswordGroup" style="display:none;">
+                <label>Password</label>
+                <input type="password" id="uploadPassword" placeholder="Certificate password" />
+            </div>
+            <div id="uploadMsg" style="font-size:13px;margin-top:8px;"></div>
+            <div class="modal-actions">
+                <button class="btn btn-accent" onclick="uploadTlsCert()">Upload Certificate</button>
+            </div>
+        </div>
+    `;
+            openModal(html);
+            refreshCertStatus();
+            loadAcmeConfig();
         }
 
-        async function refreshTlsStatus() {
+        function switchCertTab(tab, btn) {
+            document.querySelectorAll('#modalContent > .cert-tabs > .cert-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            document.querySelectorAll('#modalContent > .cert-tab-content').forEach(c => c.classList.remove('active'));
+            const tabId = 'certTab' + tab.charAt(0).toUpperCase() + tab.slice(1);
+            document.getElementById(tabId).classList.add('active');
+        }
+
+        function switchUploadTab(tab, btn) {
+            document.querySelectorAll('#certTabUpload > .cert-tabs > .cert-tab').forEach(t => t.classList.remove('active'));
+            btn.classList.add('active');
+            document.getElementById('uploadPemTab').style.display = tab === 'pem' ? '' : 'none';
+            document.getElementById('uploadP12Tab').style.display = tab === 'p12' ? '' : 'none';
+        }
+
+        function onAcmeProviderChange() {
+            const provider = document.getElementById('acmeProvider').value;
+            document.getElementById('cfTokenGroup').style.display = provider === 'cloudflare' ? '' : 'none';
+        }
+
+        async function refreshCertStatus() {
             try {
                 const res = await fetch('/api/system/tls');
                 if (!res.ok) return;
                 const data = await res.json();
-                document.getElementById('tlsCertType').textContent = data.self_signed ? 'Self-signed' : 'Custom';
-                document.getElementById('tlsSubject').textContent = data.subject || '\u2014';
-                document.getElementById('tlsExpiry').textContent = data.not_after || '\u2014';
-                document.getElementById('tlsRemoveBtn').style.display = data.self_signed ? 'none' : '';
-            } catch (_) { }
+                const grid = document.getElementById('certInfoGrid');
+                if (!grid) return;
+                const certType = data.self_signed ? 'Self-signed' : (data.issuer && data.issuer.includes("Let's Encrypt") ? "Let's Encrypt" : 'Custom');
+                grid.innerHTML =
+                    '<span class="cert-info-label">Type</span><span class="cert-info-value">' + escapeHtml(certType) + '</span>' +
+                    '<span class="cert-info-label">Subject</span><span class="cert-info-value">' + escapeHtml(data.subject || 'N/A') + '</span>' +
+                    '<span class="cert-info-label">Issuer</span><span class="cert-info-value">' + escapeHtml(data.issuer || 'N/A') + '</span>' +
+                    '<span class="cert-info-label">Expires</span><span class="cert-info-value">' + escapeHtml(data.not_after || 'N/A') + '</span>';
+                const summary = document.getElementById('certSummary');
+                if (summary) summary.textContent = certType + ' \u2014 expires ' + (data.not_after || 'N/A');
+            } catch (_) {}
+            try {
+                const res = await fetch('/api/system/tls/acme/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                const info = document.getElementById('certRenewalInfo');
+                if (info && data.config && data.config.enabled) {
+                    let text = '';
+                    if (data.config.last_renewed) text += 'Last renewed: ' + escapeHtml(data.config.last_renewed);
+                    if (data.config.last_renewal_error) text += '<br>Last error: <span style="color:var(--danger)">' + escapeHtml(data.config.last_renewal_error) + '</span>';
+                    info.innerHTML = text;
+                }
+            } catch (_) {}
         }
 
-        function showTlsMsg(msg, type) {
-            const el = document.getElementById('tlsMsg');
+        async function loadAcmeConfig() {
+            try {
+                const res = await fetch('/api/system/tls/acme/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                const c = data.config;
+                if (!c) return;
+                if (c.domain) { const el = document.getElementById('acmeDomain'); if (el) el.value = c.domain; }
+                if (c.email) { const el = document.getElementById('acmeEmail'); if (el) el.value = c.email; }
+                if (c.provider) { const el = document.getElementById('acmeProvider'); if (el) el.value = c.provider; }
+                if (c.use_staging) { const el = document.getElementById('acmeStaging'); if (el) el.checked = true; }
+                onAcmeProviderChange();
+            } catch (_) {}
+        }
+
+        async function startAcmeIssuance() {
+            const body = {
+                domain: document.getElementById('acmeDomain').value.trim(),
+                email: document.getElementById('acmeEmail').value.trim(),
+                provider: document.getElementById('acmeProvider').value,
+                cloudflare_api_token: (document.getElementById('acmeCfToken') || {}).value || '',
+                use_staging: document.getElementById('acmeStaging').checked,
+            };
+            if (!body.domain || !body.email) { showAcmeMsg('Domain and email are required', 'error'); return; }
+            document.getElementById('acmeActions').style.display = 'none';
+            document.getElementById('acmeProgressArea').style.display = '';
+            showAcmeMsg('');
+            try {
+                const res = await fetch('/api/system/tls/acme/issue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+                if (!res.ok) { const text = await res.text(); showAcmeMsg(text, 'error'); document.getElementById('acmeActions').style.display = ''; return; }
+                startAcmePolling();
+            } catch (e) { showAcmeMsg('Request failed: ' + e.message, 'error'); document.getElementById('acmeActions').style.display = ''; }
+        }
+
+        function startAcmePolling() {
+            if (acmePollTimer) return;
+            acmePollTimer = setInterval(pollAcmeStatus, 2000);
+            pollAcmeStatus();
+        }
+
+        function stopAcmePolling() {
+            if (acmePollTimer) { clearInterval(acmePollTimer); acmePollTimer = null; }
+        }
+
+        const ACME_STEPS = ['creating_account', 'placing_order', 'waiting_for_challenge', 'validating', 'downloading', 'installing', 'complete'];
+        const ACME_STEP_LABELS = { creating_account: 'Creating ACME account', placing_order: 'Placing order', waiting_for_challenge: 'DNS challenge', validating: 'Validating', downloading: 'Downloading certificate', installing: 'Installing', complete: 'Complete' };
+
+        async function pollAcmeStatus() {
+            try {
+                const res = await fetch('/api/system/tls/acme/status');
+                if (!res.ok) return;
+                const data = await res.json();
+                const p = data.progress;
+                const stepsEl = document.getElementById('acmeProgressSteps');
+                if (!stepsEl) { stopAcmePolling(); return; }
+                const currentIdx = ACME_STEPS.indexOf(p.state);
+                let html = '';
+                for (let i = 0; i < ACME_STEPS.length; i++) {
+                    const cls = i < currentIdx ? 'done' : i === currentIdx ? 'active' : '';
+                    html += '<div class="acme-step ' + cls + '"><span class="acme-step-dot"></span>' + ACME_STEP_LABELS[ACME_STEPS[i]] + '</div>';
+                }
+                stepsEl.innerHTML = html;
+                const challengeEl = document.getElementById('acmeChallengeDetails');
+                if (p.state === 'waiting_for_challenge' && p.challenge_record_name) {
+                    document.getElementById('acmeChallengeName').textContent = p.challenge_record_name;
+                    document.getElementById('acmeChallengeValue').textContent = p.challenge_record_value;
+                    if (challengeEl) challengeEl.style.display = '';
+                } else if (challengeEl) {
+                    challengeEl.style.display = 'none';
+                }
+                if (p.state === 'complete') {
+                    stopAcmePolling();
+                    showAcmeMsg('Certificate installed! The service will restart.', 'success');
+                    document.getElementById('acmeActions').style.display = '';
+                    setTimeout(function() { refreshCertStatus(); }, 3000);
+                } else if (p.state === 'failed') {
+                    stopAcmePolling();
+                    showAcmeMsg(p.message || 'Issuance failed', 'error');
+                    document.getElementById('acmeActions').style.display = '';
+                    document.getElementById('acmeProgressArea').style.display = 'none';
+                } else if (p.state === 'idle') {
+                    stopAcmePolling();
+                }
+            } catch (_) {}
+        }
+
+        async function confirmAcmeChallenge() {
+            try { await fetch('/api/system/tls/acme/confirm', { method: 'POST' }); } catch (_) {}
+        }
+
+        function showAcmeMsg(msg, type) {
+            const el = document.getElementById('acmeMsg');
+            if (!el) return;
             el.textContent = msg;
-            el.className = 'tls-msg visible ' + type;
-            setTimeout(() => { el.classList.remove('visible'); }, 5000);
+            el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success, #4caf50)' : 'var(--text-muted)';
         }
 
         async function uploadTlsCert() {
             const form = new FormData();
-            const password = document.getElementById('tlsPassword').value;
-
-            if (currentTlsTab === 'p12') {
-                const file = document.getElementById('tlsP12File').files[0];
-                if (!file) { showTlsMsg('Please select a PKCS12 file.', 'error'); return; }
-                form.append('p12_file', file);
-            } else {
-                const certFile = document.getElementById('tlsCertFile').files[0];
-                if (!certFile) { showTlsMsg('Please select a certificate file.', 'error'); return; }
-                form.append('cert_file', certFile);
-                const keyFile = document.getElementById('tlsKeyFile').files[0];
-                if (keyFile) form.append('key_file', keyFile);
-            }
-            if (password) form.append('password', password);
-
+            const certFile = document.getElementById('uploadCertFile');
+            const keyFile = document.getElementById('uploadKeyFile');
+            const p12File = document.getElementById('uploadP12File');
+            const password = document.getElementById('uploadPassword');
+            if (p12File && p12File.files[0]) { form.append('p12_file', p12File.files[0]); }
+            else if (certFile && certFile.files[0]) { form.append('cert_file', certFile.files[0]); if (keyFile && keyFile.files[0]) form.append('key_file', keyFile.files[0]); }
+            else { showUploadMsg('Select a certificate file', 'error'); return; }
+            if (password && password.value) form.append('password', password.value);
             try {
                 const res = await fetch('/api/system/tls/upload', { method: 'POST', body: form });
-                const data = await res.json();
-
-                if (res.status === 422 && data.error === 'password_required') {
-                    document.getElementById('tlsPasswordField').classList.add('visible');
-                    showTlsMsg('This file is password-protected. Enter the password and try again.', 'error');
-                    return;
-                }
-
-                if (!res.ok) {
-                    showTlsMsg(data.error || 'Upload failed.', 'error');
-                    return;
-                }
-
-                showTlsMsg('Certificate uploaded. Service restarting...', 'success');
-                document.getElementById('tlsPasswordField').classList.remove('visible');
-                document.getElementById('tlsPassword').value = '';
-                setTimeout(refreshTlsStatus, 3000);
-            } catch (_) {
-                showTlsMsg('Upload failed. Check your connection.', 'error');
-            }
+                if (res.status === 422) { document.getElementById('uploadPasswordGroup').style.display = ''; showUploadMsg('Password required', 'error'); return; }
+                if (!res.ok) { const text = await res.text(); showUploadMsg(text, 'error'); return; }
+                showUploadMsg('Certificate uploaded! Restarting...', 'success');
+                setTimeout(function() { refreshCertStatus(); }, 3000);
+            } catch (e) { showUploadMsg('Upload failed: ' + e.message, 'error'); }
         }
 
         async function removeTlsCert() {
+            if (!confirm('Remove the current certificate and revert to self-signed?')) return;
             try {
-                const res = await fetch('/api/system/tls/remove', { method: 'POST' });
-                if (res.ok) {
-                    showTlsMsg('Reverted to self-signed certificate. Service restarting...', 'success');
-                    setTimeout(refreshTlsStatus, 3000);
-                }
-            } catch (_) {
-                showTlsMsg('Failed to remove certificate.', 'error');
-            }
+                await fetch('/api/system/tls/remove', { method: 'POST' });
+                setTimeout(function() { refreshCertStatus(); closeModal(); }, 3000);
+            } catch (_) {}
+        }
+
+        function showUploadMsg(msg, type) {
+            const el = document.getElementById('uploadMsg');
+            if (!el) return;
+            el.textContent = msg;
+            el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success, #4caf50)' : 'var(--text-muted)';
         }
 
         // ---- Network Settings ----
