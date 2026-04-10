@@ -102,7 +102,6 @@ jobs:
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-latest
             archive: linux-amd64
-            cross: true
           # Linux ARM64
           - target: aarch64-unknown-linux-gnu
             os: ubuntu-latest
@@ -180,7 +179,7 @@ jobs:
       - name: Build inside OpenBSD VM
         uses: vmactions/openbsd-vm@v1
         with:
-          release: "7.6"
+          release: "7.8"
           usesh: true
           envs: 'BINARY_NAME OXI_DNS_VERSION'
           prepare: |
