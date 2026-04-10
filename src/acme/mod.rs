@@ -109,7 +109,12 @@ pub async fn issue_certificate(
     let email = acme_config.email.clone();
 
     // ── Step 1: Create ACME account ──────────────────────────────────────────
-    set_progress(&progress, IssuanceState::CreatingAccount, "Creating ACME account…").await;
+    set_progress(
+        &progress,
+        IssuanceState::CreatingAccount,
+        "Creating ACME account…",
+    )
+    .await;
 
     let directory_url = if acme_config.use_staging {
         "https://acme-staging-v02.api.letsencrypt.org/directory".to_owned()
@@ -135,7 +140,12 @@ pub async fn issue_certificate(
     info!("ACME account created for {}", email);
 
     // ── Step 2: Place order ──────────────────────────────────────────────────
-    set_progress(&progress, IssuanceState::PlacingOrder, "Placing certificate order…").await;
+    set_progress(
+        &progress,
+        IssuanceState::PlacingOrder,
+        "Placing certificate order…",
+    )
+    .await;
 
     let identifier = Identifier::Dns(domain.clone());
     let mut order = account
@@ -213,9 +223,7 @@ pub async fn issue_certificate(
             }
 
             if !propagated {
-                warn!(
-                    "DNS TXT record may not have fully propagated after 200s, proceeding anyway"
-                );
+                warn!("DNS TXT record may not have fully propagated after 200s, proceeding anyway");
             }
         } else {
             // Manual provider
@@ -374,9 +382,7 @@ pub fn cert_expires_within_days(tls_config: &TlsConfig, days: u64) -> Result<boo
     // "Thu, 31 Dec 2025 23:59:59 +0000"
     // Fall back to the task's documented format "2025-12-31 23:59:59 UTC" as well.
     let expiry = chrono::DateTime::parse_from_rfc2822(&parsed.not_after)
-        .or_else(|_| {
-            chrono::DateTime::parse_from_str(&parsed.not_after, "%Y-%m-%d %H:%M:%S %Z")
-        })
+        .or_else(|_| chrono::DateTime::parse_from_str(&parsed.not_after, "%Y-%m-%d %H:%M:%S %Z"))
         .with_context(|| {
             format!(
                 "Failed to parse certificate not_after: {}",
@@ -423,10 +429,11 @@ pub async fn renewal_loop(
             issue_certificate(acme, progress.clone(), manual_confirm.clone()).await?;
 
             // Update config timestamps on success
-            let mut updated_config = Config::load(&config_path)
-                .context("Failed to reload config after renewal")?;
-            updated_config.tls.acme.last_renewed =
-                chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+            let mut updated_config =
+                Config::load(&config_path).context("Failed to reload config after renewal")?;
+            updated_config.tls.acme.last_renewed = chrono::Utc::now()
+                .format("%Y-%m-%d %H:%M:%S UTC")
+                .to_string();
             updated_config.tls.acme.last_renewal_error = String::new();
             updated_config
                 .save(&config_path)

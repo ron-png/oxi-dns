@@ -23,9 +23,5 @@ rust_out
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# Superpowers AI-generated artifacts
-.superpowers/
-docs/superpowers/
-
 # Local Claude Code settings
 .claude/settings.local.json

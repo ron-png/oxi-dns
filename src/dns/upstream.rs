@@ -254,7 +254,8 @@ fn resolve_via_root_servers_inner(
     host: &str,
     port: u16,
     recursion_depth: u8,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Vec<SocketAddr>>> + Send + '_>> {
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Vec<SocketAddr>>> + Send + '_>>
+{
     Box::pin(resolve_via_root_servers_walk(host, port, recursion_depth))
 }
 
@@ -395,10 +396,7 @@ async fn resolve_via_root_servers_walk(
         }
 
         if next_servers.is_empty() {
-            anyhow::bail!(
-                "Root fallback: no usable NS for {} referral",
-                host
-            );
+            anyhow::bail!("Root fallback: no usable NS for {} referral", host);
         }
 
         current_servers = next_servers;

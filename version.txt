@@ -1,2 +1,2 @@
-0.5.21
-#--prerelease
+0.5.22
+--prerelease

@@ -2366,8 +2366,9 @@ async fn api_acme_issue(
             Ok(()) => {
                 // Update config timestamps on success
                 if let Ok(mut config) = crate::config::Config::load(&config_path) {
-                    config.tls.acme.last_renewed =
-                        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                    config.tls.acme.last_renewed = chrono::Utc::now()
+                        .format("%Y-%m-%d %H:%M:%S UTC")
+                        .to_string();
                     config.tls.acme.last_renewal_error = String::new();
                     let _ = config.save(&config_path);
                 }
@@ -2462,8 +2463,9 @@ async fn api_acme_renew(
         match crate::acme::issue_certificate(&acme_config, progress.clone(), manual_confirm).await {
             Ok(()) => {
                 if let Ok(mut config) = crate::config::Config::load(&config_path) {
-                    config.tls.acme.last_renewed =
-                        chrono::Utc::now().format("%Y-%m-%d %H:%M:%S UTC").to_string();
+                    config.tls.acme.last_renewed = chrono::Utc::now()
+                        .format("%Y-%m-%d %H:%M:%S UTC")
+                        .to_string();
                     config.tls.acme.last_renewal_error = String::new();
                     let _ = config.save(&config_path);
                 }
