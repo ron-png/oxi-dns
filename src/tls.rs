@@ -84,6 +84,8 @@ fn default_quic_transport() -> quinn::TransportConfig {
 }
 
 /// Load certificates from files, or generate a self-signed certificate.
+/// If cert files are configured but don't exist or can't be read, falls back
+/// to generating a self-signed certificate rather than failing.
 fn load_or_generate_certs(
     tls_config: &TlsConfig,
 ) -> anyhow::Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
@@ -93,23 +95,39 @@ fn load_or_generate_certs(
                 "Loading TLS cert from {} and key from {}",
                 cert_path, key_path
             );
-            let cert_file = std::fs::File::open(cert_path)?;
-            let key_file = std::fs::File::open(key_path)?;
-
-            let certs: Vec<CertificateDer<'static>> =
-                rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file))
-                    .collect::<Result<Vec<_>, _>>()?;
-
-            let key = rustls_pemfile::private_key(&mut std::io::BufReader::new(key_file))?
-                .ok_or_else(|| anyhow::anyhow!("No private key found in {}", key_path))?;
-
-            Ok((certs, key))
+            match load_cert_files(cert_path, key_path) {
+                Ok(result) => Ok(result),
+                Err(e) => {
+                    tracing::warn!(
+                        "Failed to load cert files ({}) — falling back to self-signed",
+                        e
+                    );
+                    generate_self_signed()
+                }
+            }
         }
         _ => {
             info!("No TLS cert/key configured, generating self-signed certificate");
             generate_self_signed()
         }
     }
+}
+
+fn load_cert_files(
+    cert_path: &str,
+    key_path: &str,
+) -> anyhow::Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
+    let cert_file = std::fs::File::open(cert_path)?;
+    let key_file = std::fs::File::open(key_path)?;
+
+    let certs: Vec<CertificateDer<'static>> =
+        rustls_pemfile::certs(&mut std::io::BufReader::new(cert_file))
+            .collect::<Result<Vec<_>, _>>()?;
+
+    let key = rustls_pemfile::private_key(&mut std::io::BufReader::new(key_file))?
+        .ok_or_else(|| anyhow::anyhow!("No private key found in {}", key_path))?;
+
+    Ok((certs, key))
 }
 
 /// Generate a self-signed certificate that covers localhost, oxi-dns.local,
