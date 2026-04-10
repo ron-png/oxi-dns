@@ -355,7 +355,14 @@ impl Config {
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         let content = toml::to_string_pretty(self)?;
-        std::fs::write(path, content)?;
+        std::fs::write(path, &content)?;
+        // Restrict config file permissions — it may contain secrets
+        // (e.g. Cloudflare API token in [tls.acme]).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600));
+        }
         Ok(())
     }
 }
