@@ -3630,8 +3630,10 @@
             } catch (e) { showAcmeMsg('Request failed: ' + e.message, 'error'); document.getElementById('acmeActions').style.display = ''; }
         }
 
+        let acmePollErrors = 0;
         function startAcmePolling() {
             if (acmePollTimer) return;
+            acmePollErrors = 0;
             acmePollTimer = setInterval(pollAcmeStatus, 2000);
             pollAcmeStatus();
         }
@@ -3666,20 +3668,29 @@
                 } else if (challengeEl) {
                     challengeEl.style.display = 'none';
                 }
-                if (p.state === 'complete') {
+                if (p.state === 'complete' || p.state === 'idle') {
                     stopAcmePolling();
-                    showAcmeMsg('Certificate installed! The service will restart.', 'success');
+                    showAcmeMsg('Certificate installed successfully.', 'success');
                     document.getElementById('acmeActions').style.display = '';
-                    setTimeout(function() { refreshCertStatus(); }, 3000);
+                    document.getElementById('acmeProgressArea').style.display = 'none';
+                    setTimeout(function() { refreshCertStatus(); }, 1000);
                 } else if (p.state === 'failed') {
                     stopAcmePolling();
                     showAcmeMsg(p.message || 'Issuance failed', 'error');
                     document.getElementById('acmeActions').style.display = '';
                     document.getElementById('acmeProgressArea').style.display = 'none';
-                } else if (p.state === 'idle') {
-                    stopAcmePolling();
                 }
-            } catch (_) {}
+            } catch (_) {
+                // Server is likely restarting after cert install — wait and retry
+                acmePollErrors = (acmePollErrors || 0) + 1;
+                if (acmePollErrors >= 5) {
+                    stopAcmePolling();
+                    showAcmeMsg('Certificate installed. Reloading...', 'success');
+                    document.getElementById('acmeActions').style.display = '';
+                    document.getElementById('acmeProgressArea').style.display = 'none';
+                    setTimeout(function() { location.reload(); }, 3000);
+                }
+            }
         }
 
         async function confirmAcmeChallenge() {
