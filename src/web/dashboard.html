@@ -2892,6 +2892,10 @@
             if (mode === 'logs') {
                 refreshLogSettings();
                 resetAndLoadLogs();
+                if (localStorage.getItem('logsAutoRefresh') === '1') {
+                    document.getElementById('logsAutoRefresh').checked = true;
+                    toggleLogsAutoRefresh(true);
+                }
             }
         }
 
@@ -4811,6 +4815,7 @@
         }, 0);
 
         function toggleLogsAutoRefresh(enabled) {
+            localStorage.setItem('logsAutoRefresh', enabled ? '1' : '0');
             if (enabled) {
                 document.getElementById('logsRefreshBtn').style.display = 'none';
                 logsAutoRefreshInterval = setInterval(() => {
