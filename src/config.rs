@@ -77,8 +77,11 @@ pub struct WebConfig {
     /// Addresses to listen on for the web admin UI
     #[serde(default = "default_web_listen", deserialize_with = "string_or_vec")]
     pub listen: Vec<String>,
-    /// Addresses to listen on for the HTTPS web admin UI
-    #[serde(default, deserialize_with = "string_or_vec_opt")]
+    /// Addresses to listen on for the HTTPS web admin UI (defaults to same as listen)
+    #[serde(
+        default = "default_web_https_listen",
+        deserialize_with = "string_or_vec_opt"
+    )]
     pub https_listen: Option<Vec<String>>,
 }
 
@@ -285,7 +288,7 @@ fn default_dns() -> DnsConfig {
 fn default_web() -> WebConfig {
     WebConfig {
         listen: default_web_listen(),
-        https_listen: None,
+        https_listen: Some(default_web_listen()),
     }
 }
 
@@ -295,6 +298,10 @@ fn default_dns_listen() -> Vec<String> {
 
 fn default_web_listen() -> Vec<String> {
     vec!["0.0.0.0:9853".to_string(), "[::]:9853".to_string()]
+}
+
+fn default_web_https_listen() -> Option<Vec<String>> {
+    Some(default_web_listen())
 }
 
 fn default_upstreams() -> Vec<String> {

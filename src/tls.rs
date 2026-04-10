@@ -112,7 +112,8 @@ fn load_or_generate_certs(
     }
 }
 
-/// Generate a self-signed certificate for localhost / oxi-dns.
+/// Generate a self-signed certificate that covers localhost, oxi-dns.local,
+/// and every IP address on the machine's network interfaces.
 fn generate_self_signed() -> anyhow::Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)>
 {
     let mut params =
@@ -120,6 +121,8 @@ fn generate_self_signed() -> anyhow::Result<(Vec<CertificateDer<'static>>, Priva
     params
         .distinguished_name
         .push(rcgen::DnType::CommonName, "Oxi-DNS Server");
+
+    // Always include loopback
     params
         .subject_alt_names
         .push(rcgen::SanType::IpAddress(std::net::IpAddr::V4(
@@ -130,6 +133,24 @@ fn generate_self_signed() -> anyhow::Result<(Vec<CertificateDer<'static>>, Priva
         .push(rcgen::SanType::IpAddress(std::net::IpAddr::V6(
             std::net::Ipv6Addr::LOCALHOST,
         )));
+
+    // Add all IPs from network interfaces so the cert works when accessed by IP
+    if let Ok(interfaces) = get_if_addrs::get_if_addrs() {
+        let mut seen = std::collections::HashSet::new();
+        for iface in &interfaces {
+            let ip = iface.ip();
+            if ip.is_loopback() || ip.is_multicast() || ip.is_unspecified() {
+                continue;
+            }
+            if seen.insert(ip) {
+                params.subject_alt_names.push(rcgen::SanType::IpAddress(ip));
+            }
+        }
+        info!(
+            "Self-signed cert covers {} interface IP(s) + localhost",
+            seen.len()
+        );
+    }
 
     let key_pair = rcgen::KeyPair::generate()?;
     let cert = params.self_signed(&key_pair)?;

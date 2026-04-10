@@ -423,6 +423,16 @@ pub async fn run_web_server(
     let mut handles = Vec::new();
     let is_https_active = https_listen.is_some() && tls_config.is_some();
 
+    // If HTTPS and HTTP share the same addresses, only start HTTPS (avoid port conflicts)
+    let https_addrs_set: std::collections::HashSet<&str> = https_listen
+        .map(|addrs| addrs.iter().map(|s| s.as_str()).collect())
+        .unwrap_or_default();
+    let http_addrs_overlap = listen
+        .iter()
+        .all(|addr| https_addrs_set.contains(addr.as_str()))
+        && !https_addrs_set.is_empty();
+    let skip_http = is_https_active && http_addrs_overlap;
+
     if is_https_active {
         let tls_cfg = tls_config.unwrap();
         let https_addrs = https_listen.unwrap();
@@ -490,7 +500,10 @@ pub async fn run_web_server(
             }));
         }
 
-        // HTTP becomes redirect-only
+        // HTTP becomes redirect-only (unless HTTP and HTTPS share the same port)
+        if skip_http {
+            info!("HTTP and HTTPS share the same addresses — HTTPS only mode");
+        }
         let redirect_target = https_addrs.first().cloned().unwrap_or_default();
         let redirect_host = {
             let host_part = redirect_target
@@ -512,28 +525,33 @@ pub async fn run_web_server(
             .fallback(https_redirect)
             .with_state(redirect_host);
 
-        for addr in listen {
-            let redirect_app = redirect_app.clone();
-            let sock_addr: std::net::SocketAddr = addr.parse()?;
-            let domain = if sock_addr.is_ipv4() {
-                socket2::Domain::IPV4
-            } else {
-                socket2::Domain::IPV6
-            };
-            let socket =
-                socket2::Socket::new(domain, socket2::Type::STREAM, Some(socket2::Protocol::TCP))?;
-            socket.set_reuse_port(true)?;
-            socket.set_nonblocking(true)?;
-            socket.bind(&sock_addr.into())?;
-            socket.listen(1024)?;
-            let listener = tokio::net::TcpListener::from_std(socket.into())?;
-            let addr_str = addr.clone();
-            info!("Web admin HTTP (redirect) listening on {}", addr_str);
-            handles.push(tokio::spawn(async move {
-                if let Err(e) = axum::serve(listener, redirect_app.into_make_service()).await {
-                    tracing::error!("HTTP redirect error on {}: {}", addr_str, e);
-                }
-            }));
+        if !skip_http {
+            for addr in listen {
+                let redirect_app = redirect_app.clone();
+                let sock_addr: std::net::SocketAddr = addr.parse()?;
+                let domain = if sock_addr.is_ipv4() {
+                    socket2::Domain::IPV4
+                } else {
+                    socket2::Domain::IPV6
+                };
+                let socket = socket2::Socket::new(
+                    domain,
+                    socket2::Type::STREAM,
+                    Some(socket2::Protocol::TCP),
+                )?;
+                socket.set_reuse_port(true)?;
+                socket.set_nonblocking(true)?;
+                socket.bind(&sock_addr.into())?;
+                socket.listen(1024)?;
+                let listener = tokio::net::TcpListener::from_std(socket.into())?;
+                let addr_str = addr.clone();
+                info!("Web admin HTTP (redirect) listening on {}", addr_str);
+                handles.push(tokio::spawn(async move {
+                    if let Err(e) = axum::serve(listener, redirect_app.into_make_service()).await {
+                        tracing::error!("HTTP redirect error on {}: {}", addr_str, e);
+                    }
+                }));
+            }
         }
     } else {
         // Normal HTTP mode (existing behavior)

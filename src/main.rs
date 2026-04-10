@@ -575,10 +575,7 @@ async fn main() -> anyhow::Result<()> {
     let web_listen = config.web.listen.clone();
     let web_https_listen = config.web.https_listen.clone();
 
-    let web_tls_config = if config.tls.cert_path.is_some()
-        && config.tls.key_path.is_some()
-        && web_https_listen.is_some()
-    {
+    let web_tls_config = if web_https_listen.is_some() {
         match tls::build_server_config(&config.tls, vec![b"h2".to_vec(), b"http/1.1".to_vec()]) {
             Ok(cfg) => Some(cfg),
             Err(e) => {
