@@ -80,6 +80,13 @@ pub struct WebConfig {
     /// Addresses to listen on for the HTTPS web admin UI (opt-in)
     #[serde(default, deserialize_with = "string_or_vec_opt")]
     pub https_listen: Option<Vec<String>>,
+    /// Force HTTP requests to redirect to HTTPS. Off by default.
+    #[serde(default)]
+    pub auto_redirect_https: bool,
+    /// Set when auto_redirect_https is first enabled; cleared on successful
+    /// password change. Drives the dashboard password-rotation banner.
+    #[serde(default)]
+    pub password_change_recommended: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -286,6 +293,8 @@ fn default_web() -> WebConfig {
     WebConfig {
         listen: default_web_listen(),
         https_listen: None,
+        auto_redirect_https: false,
+        password_change_recommended: false,
     }
 }
 
@@ -406,5 +415,56 @@ impl Default for Config {
             system: SystemConfig::default(),
             log: LogConfig::default(),
         }
+    }
+}
+
+#[cfg(test)]
+mod web_config_tests {
+    use super::*;
+
+    #[test]
+    fn web_config_has_new_https_fields_with_defaults() {
+        let toml_str = r#"
+listen = ["0.0.0.0:9853"]
+https_listen = ["0.0.0.0:9854"]
+"#;
+        let cfg: WebConfig = toml::from_str(toml_str).expect("parse");
+        assert_eq!(cfg.listen, vec!["0.0.0.0:9853".to_string()]);
+        assert_eq!(cfg.https_listen, Some(vec!["0.0.0.0:9854".to_string()]));
+        assert!(!cfg.auto_redirect_https, "auto_redirect_https defaults to false");
+        assert!(
+            !cfg.password_change_recommended,
+            "password_change_recommended defaults to false"
+        );
+    }
+
+    #[test]
+    fn web_config_round_trip_preserves_new_fields() {
+        let toml_str = r#"
+listen = ["0.0.0.0:9853"]
+https_listen = ["0.0.0.0:9854"]
+auto_redirect_https = true
+password_change_recommended = true
+"#;
+        let cfg: WebConfig = toml::from_str(toml_str).expect("parse");
+        assert!(cfg.auto_redirect_https);
+        assert!(cfg.password_change_recommended);
+
+        let serialized = toml::to_string(&cfg).expect("serialize");
+        let reparsed: WebConfig = toml::from_str(&serialized).expect("reparse");
+        assert!(reparsed.auto_redirect_https);
+        assert!(reparsed.password_change_recommended);
+    }
+
+    #[test]
+    fn web_config_missing_new_fields_defaults_false() {
+        // Old configs must deserialize without error.
+        let toml_str = r#"
+listen = ["0.0.0.0:9853"]
+"#;
+        let cfg: WebConfig = toml::from_str(toml_str).expect("parse");
+        assert!(!cfg.auto_redirect_https);
+        assert!(!cfg.password_change_recommended);
+        assert!(cfg.https_listen.is_none());
     }
 }
