@@ -4023,6 +4023,9 @@
             for (const family of ['ipv4', 'ipv6']) {
                 const input = getPortInput(listener.prefix, family);
                 input.disabled = !enabled;
+                if (enabled && !input.value && listener.defaultPort) {
+                    input.value = listener.defaultPort;
+                }
             }
 
             checkNetworkChanges();

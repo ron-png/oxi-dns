@@ -274,8 +274,9 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - The horizontal scroll bar at the logs tab is a bit funky (visual Bug)
 - The root servers toggle has the description with "Maximum Privacy". This needs elaboration. 
 - Verify DNS over TLS, HTTPS and QUIC work (feature)
+- When enabling DoH, the user should be able to define the https request path (feature)
+- in addition, harden DoH, DoT and DoQ (feature) (pathing attacks, etc)
 - Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands.
-- let the user define the https request path
 
 ### Goals for Version 2:
 - Add a "Test" button for the upstream DNS servers (feature)
