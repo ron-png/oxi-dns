@@ -246,8 +246,33 @@ async fn udp_query(
 /// Standalone function — no UpstreamForwarder needed. Used as fallback when the
 /// system resolver is unavailable (e.g. oxi-dns is the system DNS and is restarting).
 async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
+    resolve_via_root_servers_inner(host, port, 0).await
+}
+
+/// Inner implementation with recursion depth tracking for glueless referrals.
+fn resolve_via_root_servers_inner(
+    host: &str,
+    port: u16,
+    recursion_depth: u8,
+) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Vec<SocketAddr>>> + Send + '_>> {
+    Box::pin(resolve_via_root_servers_walk(host, port, recursion_depth))
+}
+
+async fn resolve_via_root_servers_walk(
+    host: &str,
+    port: u16,
+    recursion_depth: u8,
+) -> anyhow::Result<Vec<SocketAddr>> {
     use hickory_proto::op::ResponseCode;
     use hickory_proto::rr::{Name, RData, RecordType};
+
+    const MAX_GLUELESS_DEPTH: u8 = 3;
+    if recursion_depth >= MAX_GLUELESS_DEPTH {
+        anyhow::bail!(
+            "Root fallback: max glueless recursion depth exceeded for {}",
+            host
+        );
+    }
 
     let fqdn = if host.ends_with('.') {
         host.to_string()
@@ -354,8 +379,26 @@ async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<S
             }
         }
 
+        // Glueless referral: resolve NS hostnames recursively.
         if next_servers.is_empty() {
-            anyhow::bail!("Root fallback: no glue records for {} referral", host);
+            for ns_name in &ns_names {
+                let stripped = ns_name.trim_end_matches('.');
+                if let Ok(addrs) =
+                    resolve_via_root_servers_inner(stripped, 53, recursion_depth + 1).await
+                {
+                    next_servers.extend(addrs);
+                    if !next_servers.is_empty() {
+                        break;
+                    }
+                }
+            }
+        }
+
+        if next_servers.is_empty() {
+            anyhow::bail!(
+                "Root fallback: no usable NS for {} referral",
+                host
+            );
         }
 
         current_servers = next_servers;

@@ -3812,7 +3812,7 @@
         }
 
         function buildReconfigureCommand(changes) {
-            return `sudo oxi-dns --reconfigure ${changes.map(shellQuote).join(' ')}`;
+            return `sudo /opt/oxi-dns/oxi-dns --reconfigure ${changes.map(shellQuote).join(' ')}`;
         }
 
         function formatInterfaceEntries(entries) {
