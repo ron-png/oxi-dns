@@ -20,7 +20,7 @@ mod web;
 
 use config::Config;
 use std::path::PathBuf;
-use tracing::info;
+use tracing::{info, warn};
 
 const VERSION: &str = env!("OXIDNS_VERSION");
 
@@ -131,7 +131,8 @@ async fn main() -> anyhow::Result<()> {
         upstream.set_cache_enabled(config.dns.cache_enabled);
         info!("Health check: upstreams OK");
 
-        // Send a test DNS query through the upstream pipeline
+        // Send a test DNS query through the upstream pipeline.
+        // Uses example.com (RFC 2606 reserved — designed for testing, no tracking concerns).
         use hickory_proto::op::{Header, Message, MessageType, OpCode, Query};
         use hickory_proto::rr::{Name, RecordType};
 
@@ -143,12 +144,40 @@ async fn main() -> anyhow::Result<()> {
         header.set_recursion_desired(true);
         msg.set_header(header);
         let mut query = Query::new();
-        query.set_name(Name::from_ascii("dns.google.")?);
+        query.set_name(Name::from_ascii("example.com.")?);
         query.set_query_type(RecordType::A);
         msg.add_query(query);
         let packet = msg.to_vec()?;
 
-        let (response_bytes, upstream_label) = upstream.forward(&packet).await?;
+        // Retry transient network failures. Auto-update can fire during boot or
+        // brief connectivity flaps — a single upstream blip shouldn't fail the
+        // whole health check. Backoff grows: 300ms, 900ms.
+        const MAX_ATTEMPTS: u32 = 3;
+        let mut last_err: Option<anyhow::Error> = None;
+        let mut resolved: Option<(Vec<u8>, String)> = None;
+        for attempt in 1..=MAX_ATTEMPTS {
+            match upstream.forward(&packet).await {
+                Ok(r) => {
+                    resolved = Some(r);
+                    break;
+                }
+                Err(e) => {
+                    warn!(
+                        "Health check: test query attempt {}/{} failed: {}",
+                        attempt, MAX_ATTEMPTS, e
+                    );
+                    last_err = Some(e);
+                    if attempt < MAX_ATTEMPTS {
+                        let backoff = std::time::Duration::from_millis(300 * 3u64.pow(attempt - 1));
+                        tokio::time::sleep(backoff).await;
+                    }
+                }
+            }
+        }
+
+        let (response_bytes, upstream_label) = resolved.ok_or_else(|| {
+            last_err.unwrap_or_else(|| anyhow::anyhow!("test query failed"))
+        })?;
         info!(
             "Health check: test query resolved via {} ({} bytes)",
             upstream_label,
