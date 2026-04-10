@@ -77,11 +77,8 @@ pub struct WebConfig {
     /// Addresses to listen on for the web admin UI
     #[serde(default = "default_web_listen", deserialize_with = "string_or_vec")]
     pub listen: Vec<String>,
-    /// Addresses to listen on for the HTTPS web admin UI (defaults to same as listen)
-    #[serde(
-        default = "default_web_https_listen",
-        deserialize_with = "string_or_vec_opt"
-    )]
+    /// Addresses to listen on for the HTTPS web admin UI (opt-in)
+    #[serde(default, deserialize_with = "string_or_vec_opt")]
     pub https_listen: Option<Vec<String>>,
 }
 
@@ -288,7 +285,7 @@ fn default_dns() -> DnsConfig {
 fn default_web() -> WebConfig {
     WebConfig {
         listen: default_web_listen(),
-        https_listen: default_web_https_listen(),
+        https_listen: None,
     }
 }
 
@@ -298,10 +295,6 @@ fn default_dns_listen() -> Vec<String> {
 
 fn default_web_listen() -> Vec<String> {
     vec!["0.0.0.0:9853".to_string(), "[::]:9853".to_string()]
-}
-
-fn default_web_https_listen() -> Option<Vec<String>> {
-    Some(vec!["0.0.0.0:9854".to_string(), "[::]:9854".to_string()])
 }
 
 fn default_upstreams() -> Vec<String> {
@@ -349,7 +342,20 @@ impl Config {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         if path.exists() {
             let content = std::fs::read_to_string(path)?;
-            let config: Config = toml::from_str(&content)?;
+            let mut config: Config = toml::from_str(&content)?;
+
+            // Migrate: add new config fields that didn't exist in older versions.
+            // Check the raw TOML to distinguish "field missing" from "explicitly empty".
+            let raw: toml::Value = toml::from_str(&content)?;
+            let migrated = config.migrate(&raw);
+            if migrated {
+                if let Err(e) = config.save(path) {
+                    tracing::warn!("Failed to save migrated config: {}", e);
+                } else {
+                    tracing::info!("Config migrated with new defaults and saved");
+                }
+            }
+
             Ok(config)
         } else {
             tracing::warn!(
@@ -358,6 +364,22 @@ impl Config {
             );
             Ok(Self::default())
         }
+    }
+
+    /// Apply config migrations for fields added in newer versions.
+    /// Returns true if any changes were made.
+    fn migrate(&mut self, raw: &toml::Value) -> bool {
+        let mut changed = false;
+
+        // v0.5.29+: web.https_listen defaults to port 9854 when missing
+        let has_https_listen = raw.get("web").and_then(|w| w.get("https_listen")).is_some();
+        if !has_https_listen && self.web.https_listen.is_none() {
+            self.web.https_listen = Some(vec!["0.0.0.0:9854".to_string(), "[::]:9854".to_string()]);
+            tracing::info!("Config migration: added web.https_listen = [0.0.0.0:9854, [::]:9854]");
+            changed = true;
+        }
+
+        changed
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
