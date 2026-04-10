@@ -273,7 +273,6 @@ Please note that this list is not a promise, rather thoughts I might change my m
 
 ### Goals for Version 1:
 - Make the UI more user friendly (feature)
-- The root servers toggle has the description with "Maximum Privacy". This needs elaboration. 
 - Verify DNS over TLS, HTTPS and QUIC work (feature)
 - When enabling DoH, the user should be able to define the https request path (feature)
 - in addition, harden DoH, DoT and DoQ (feature) (pathing attacks, etc)

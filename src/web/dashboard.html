@@ -350,6 +350,43 @@
             line-height: 1.4;
         }
 
+        .info-hint {
+            display: inline-block;
+            cursor: help;
+            position: relative;
+            width: 15px;
+            height: 15px;
+            line-height: 15px;
+            text-align: center;
+            border-radius: 50%;
+            background: var(--border);
+            color: var(--text-muted);
+            font-size: 10px;
+            font-weight: 600;
+            font-style: normal;
+            vertical-align: middle;
+            margin-left: 4px;
+        }
+
+        .info-hint:hover::after {
+            content: attr(data-hint);
+            position: absolute;
+            left: 50%;
+            transform: translateX(-50%);
+            top: calc(100% + 6px);
+            background: var(--border-light);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font-size: 12px;
+            font-weight: normal;
+            color: var(--text-secondary);
+            white-space: normal;
+            width: 280px;
+            z-index: 50;
+            line-height: 1.5;
+        }
+
         .stat-card .value {
             font-size: 28px;
             font-weight: var(--weight-light);
@@ -2118,8 +2155,7 @@
                 <div class="setting-row" style="margin-bottom: 16px;">
                     <div class="setting-info">
                         <h3>Use Root DNS Servers</h3>
-                        <p>Resolve domains directly via root servers instead of third-party resolvers. Maximum privacy.
-                        </p>
+                        <p>Resolve domains directly via root servers instead of third-party resolvers. No single resolver sees all your queries. <span class="info-hint" data-hint="Third-party resolvers like 1.1.1.1 or 8.8.8.8 see every domain you look up. With root servers, each query is split across root, TLD, and authoritative servers, so no single party has the full picture. The trade-off: queries may be slightly slower, and the authoritative nameservers for each domain still see your IP. It's not absolute privacy — it's about not having to trust one resolver with everything.">i</span></p>
                     </div>
                     <label class="toggle-switch" id="toggle-root_servers">
                         <input type="checkbox" id="rootServersCheckbox"
@@ -3407,7 +3443,7 @@
                     <option value="cloudflare">Cloudflare</option>
                     <option value="manual">Manual DNS</option>
                 </select>
-                <a href="https://github.com/ron-png/oxi-dns/issues/new" target="_blank" rel="noopener" style="font-size:12px;display:block;margin-top:4px;">Suggest a provider</a>
+                <a href="https://github.com/ron-png/oxi-dns/issues/new" target="_blank" rel="noopener" style="font-size:12px;display:block;margin-top:4px;color:var(--text-muted);">Suggest a provider</a>
             </div>
             <div class="form-group" id="cfTokenGroup">
                 <label>Cloudflare API Token</label>
