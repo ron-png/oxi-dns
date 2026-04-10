@@ -405,10 +405,7 @@ pub async fn run_web_server(
         .route("/api/system/tls/acme/confirm", post(api_acme_confirm))
         .route("/api/system/tls/acme/status", get(api_acme_status))
         .route("/api/system/tls/acme/renew", post(api_acme_renew))
-        .route(
-            "/api/system/tls/acme/auto-renew",
-            post(api_acme_auto_renew),
-        )
+        .route("/api/system/tls/acme/auto-renew", post(api_acme_auto_renew))
         // Query log
         .route("/api/logs", get(api_logs))
         .route("/api/logs/settings", get(api_get_log_settings))
