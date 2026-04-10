@@ -265,22 +265,19 @@ URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh";
 
 ## API Reference
 
-All endpoints are served on the web dashboard port (default `9853`). Authentication is via session cookie (from `/api/auth/login`) or API token (via `Authorization: Bearer <token>` header).
+All endpoints are served on the web dashboard port (default `9853`). Authentication is via API token (`Authorization: Bearer <token>` header). Create tokens in the dashboard under **Advanced > API Tokens**, or via the API itself.
 
 ### Authentication
 
 ```bash
-# Login (returns session cookie)
-curl -c cookies.txt -X POST http://localhost:9853/api/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"username": "admin", "password": "yourpassword"}'
+# Set your API token (create one in the dashboard, or via POST /api/tokens)
+export OXI_TOKEN="your-api-token"
 
-# Use session cookie for subsequent requests
-curl -b cookies.txt http://localhost:9853/api/stats
-
-# Or use an API token (create one in the dashboard under Advanced > API Tokens)
-curl -H 'Authorization: Bearer your-api-token' http://localhost:9853/api/stats
+# Use it with any request
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/stats
 ```
+
+Session cookies (from `/api/auth/login`) are also supported but API tokens are recommended for scripts and automation — they're scoped to specific permissions and can be revoked individually.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -294,19 +291,19 @@ curl -H 'Authorization: Bearer your-api-token' http://localhost:9853/api/stats
 
 ```bash
 # Get current stats
-curl -b cookies.txt http://localhost:9853/api/stats
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/stats
 
 # Get query log (with search and filtering)
-curl -b cookies.txt 'http://localhost:9853/api/logs?search=google.com&status=blocked&limit=50'
+curl -H "Authorization: Bearer $OXI_TOKEN" 'http://localhost:9853/api/logs?search=google.com&status=blocked&limit=50'
 
 # Get historical stats (time-series)
-curl -b cookies.txt http://localhost:9853/api/stats/history
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/stats/history
 
 # Top queried/blocked domains
-curl -b cookies.txt http://localhost:9853/api/stats/top-domains
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/stats/top-domains
 
 # Stats summary
-curl -b cookies.txt http://localhost:9853/api/stats/summary
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/stats/summary
 ```
 
 | Method | Endpoint | Description |
@@ -324,19 +321,19 @@ curl -b cookies.txt http://localhost:9853/api/stats/summary
 
 ```bash
 # Check blocking status
-curl -b cookies.txt http://localhost:9853/api/blocking
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/blocking
 
 # Disable blocking (e.g., for 5 minutes)
-curl -b cookies.txt -X POST http://localhost:9853/api/blocking/disable
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/blocking/disable
 
 # Re-enable blocking
-curl -b cookies.txt -X POST http://localhost:9853/api/blocking/enable
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/blocking/enable
 
 # Get blocking mode
-curl -b cookies.txt http://localhost:9853/api/blocking/mode
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/blocking/mode
 
 # Set blocking mode
-curl -b cookies.txt -X POST http://localhost:9853/api/blocking/mode \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/blocking/mode \
   -H 'Content-Type: application/json' \
   -d '{"mode": "refused"}'
 ```
@@ -353,28 +350,28 @@ curl -b cookies.txt -X POST http://localhost:9853/api/blocking/mode \
 
 ```bash
 # List custom blocked domains
-curl -b cookies.txt http://localhost:9853/api/blocklist/custom
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/blocklist/custom
 
 # Block a domain
-curl -b cookies.txt -X POST http://localhost:9853/api/blocklist/add \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/blocklist/add \
   -H 'Content-Type: application/json' \
   -d '{"domain": "example.com"}'
 
 # Unblock a domain
-curl -b cookies.txt -X POST http://localhost:9853/api/blocklist/remove \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/blocklist/remove \
   -H 'Content-Type: application/json' \
   -d '{"domain": "example.com"}'
 
 # List allowlisted domains
-curl -b cookies.txt http://localhost:9853/api/allowlist
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/allowlist
 
 # Add to allowlist
-curl -b cookies.txt -X POST http://localhost:9853/api/allowlist/add \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/allowlist/add \
   -H 'Content-Type: application/json' \
   -d '{"domain": "safe.example.com"}'
 
 # Remove from allowlist
-curl -b cookies.txt -X POST http://localhost:9853/api/allowlist/remove \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/allowlist/remove \
   -H 'Content-Type: application/json' \
   -d '{"domain": "safe.example.com"}'
 ```
@@ -392,15 +389,15 @@ curl -b cookies.txt -X POST http://localhost:9853/api/allowlist/remove \
 
 ```bash
 # List blocklist sources
-curl -b cookies.txt http://localhost:9853/api/blocklist-sources
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/blocklist-sources
 
 # Add a blocklist source
-curl -b cookies.txt -X POST http://localhost:9853/api/blocklist-source/add \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/blocklist-source/add \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"}'
 
 # Remove a blocklist source
-curl -b cookies.txt -X POST http://localhost:9853/api/blocklist-source/remove \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/blocklist-source/remove \
   -H 'Content-Type: application/json' \
   -d '{"url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"}'
 ```
@@ -417,10 +414,10 @@ curl -b cookies.txt -X POST http://localhost:9853/api/blocklist-source/remove \
 
 ```bash
 # List all features
-curl -b cookies.txt http://localhost:9853/api/features
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/features
 
 # Enable root server resolution
-curl -b cookies.txt -X POST http://localhost:9853/api/features/root_servers \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/features/root_servers \
   -H 'Content-Type: application/json' \
   -d '{"enabled": true}'
 ```
@@ -436,15 +433,15 @@ Available feature IDs: `ads_malware`, `nsfw`, `safe_search`, `youtube_safe_searc
 
 ```bash
 # List configured upstreams
-curl -b cookies.txt http://localhost:9853/api/upstreams
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/upstreams
 
 # Add an upstream (supports udp://, tls://, https://, quic://)
-curl -b cookies.txt -X POST http://localhost:9853/api/upstreams/add \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/upstreams/add \
   -H 'Content-Type: application/json' \
   -d '{"upstream": "tls://1.1.1.1"}'
 
 # Remove an upstream
-curl -b cookies.txt -X POST http://localhost:9853/api/upstreams/remove \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/upstreams/remove \
   -H 'Content-Type: application/json' \
   -d '{"upstream": "tls://1.1.1.1"}'
 ```
@@ -459,10 +456,10 @@ curl -b cookies.txt -X POST http://localhost:9853/api/upstreams/remove \
 
 ```bash
 # Cache statistics
-curl -b cookies.txt http://localhost:9853/api/cache/stats
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/cache/stats
 
 # Flush the cache
-curl -b cookies.txt -X POST http://localhost:9853/api/cache/flush
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/cache/flush
 ```
 
 | Method | Endpoint | Description |
@@ -474,10 +471,10 @@ curl -b cookies.txt -X POST http://localhost:9853/api/cache/flush
 
 ```bash
 # Get current network listen addresses and interfaces
-curl -b cookies.txt http://localhost:9853/api/system/network
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/system/network
 
 # Update optional protocol listeners (DoT, DoH, DoQ)
-curl -b cookies.txt -X POST http://localhost:9853/api/system/network \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/network \
   -H 'Content-Type: application/json' \
   -d '{"dot_listen": ["0.0.0.0:853", "[::]:853"]}'
 ```
@@ -491,21 +488,21 @@ curl -b cookies.txt -X POST http://localhost:9853/api/system/network \
 
 ```bash
 # Get current certificate info
-curl -b cookies.txt http://localhost:9853/api/system/tls
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/system/tls
 
 # Upload PEM certificate
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/upload \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/upload \
   -F 'cert_file=@cert.pem' -F 'key_file=@key.pem'
 
 # Upload PKCS12 certificate
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/upload \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/upload \
   -F 'p12_file=@certificate.p12' -F 'password=mypassword'
 
 # Remove certificate (revert to self-signed)
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/remove
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/remove
 
 # Download certificate (requires password confirmation)
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/download \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/download \
   -H 'Content-Type: application/json' \
   -d '{"password": "yourpassword"}'
 ```
@@ -521,7 +518,7 @@ curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/download \
 
 ```bash
 # Issue a wildcard certificate via Cloudflare DNS
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/issue \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/acme/issue \
   -H 'Content-Type: application/json' \
   -d '{
     "domain": "example.com",
@@ -532,7 +529,7 @@ curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/issue \
   }'
 
 # Issue via manual DNS (you create the TXT record yourself)
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/issue \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/acme/issue \
   -H 'Content-Type: application/json' \
   -d '{
     "domain": "example.com",
@@ -542,16 +539,16 @@ curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/issue \
   }'
 
 # Check issuance progress
-curl -b cookies.txt http://localhost:9853/api/system/tls/acme/status
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/system/tls/acme/status
 
 # Confirm manual DNS challenge (after creating TXT record)
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/confirm
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/acme/confirm
 
 # Trigger manual renewal
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/renew
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/acme/renew
 
 # Toggle auto-renewal
-curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/auto-renew \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/tls/acme/auto-renew \
   -H 'Content-Type: application/json' \
   -d '{"enabled": true}'
 ```
@@ -568,30 +565,30 @@ curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/auto-renew
 
 ```bash
 # Get version info
-curl -b cookies.txt http://localhost:9853/api/system/version
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/system/version
 
 # Check for updates
-curl -b cookies.txt -X POST http://localhost:9853/api/system/version/check
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/version/check
 
 # Perform update
-curl -b cookies.txt -X POST http://localhost:9853/api/system/update
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/update
 
 # Restart service
-curl -b cookies.txt -X POST http://localhost:9853/api/system/restart
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/restart
 
 # Get/set auto-update
-curl -b cookies.txt http://localhost:9853/api/system/auto-update
-curl -b cookies.txt -X POST http://localhost:9853/api/system/auto-update \
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/system/auto-update
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/auto-update \
   -H 'Content-Type: application/json' -d '{"enabled": true}'
 
 # Get/set IPv6
-curl -b cookies.txt http://localhost:9853/api/system/ipv6
-curl -b cookies.txt -X POST http://localhost:9853/api/system/ipv6 \
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/system/ipv6
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/ipv6 \
   -H 'Content-Type: application/json' -d '{"enabled": true}'
 
 # Get/set release channel
-curl -b cookies.txt http://localhost:9853/api/system/release-channel
-curl -b cookies.txt -X POST http://localhost:9853/api/system/release-channel \
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/system/release-channel
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/system/release-channel \
   -H 'Content-Type: application/json' -d '{"channel": "stable"}'
 ```
 
@@ -611,25 +608,25 @@ curl -b cookies.txt -X POST http://localhost:9853/api/system/release-channel \
 
 ```bash
 # List users
-curl -b cookies.txt http://localhost:9853/api/users
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/users
 
 # Create user
-curl -b cookies.txt -X POST http://localhost:9853/api/users \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/users \
   -H 'Content-Type: application/json' \
   -d '{"username": "viewer", "password": "pass123", "permissions": ["view_stats", "view_logs"]}'
 
 # Update user permissions
-curl -b cookies.txt -X PUT http://localhost:9853/api/users/2 \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X PUT http://localhost:9853/api/users/2 \
   -H 'Content-Type: application/json' \
   -d '{"permissions": ["view_stats", "view_logs", "manage_features"], "active": true}'
 
 # Reset user password
-curl -b cookies.txt -X POST http://localhost:9853/api/users/2/reset-password \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/users/2/reset-password \
   -H 'Content-Type: application/json' \
   -d '{"new_password": "newpass123"}'
 
 # Delete user
-curl -b cookies.txt -X DELETE http://localhost:9853/api/users/2
+curl -H "Authorization: Bearer $OXI_TOKEN" -X DELETE http://localhost:9853/api/users/2
 ```
 
 | Method | Endpoint | Description |
@@ -644,15 +641,15 @@ curl -b cookies.txt -X DELETE http://localhost:9853/api/users/2
 
 ```bash
 # List tokens
-curl -b cookies.txt http://localhost:9853/api/tokens
+curl -H "Authorization: Bearer $OXI_TOKEN" http://localhost:9853/api/tokens
 
 # Create token
-curl -b cookies.txt -X POST http://localhost:9853/api/tokens \
+curl -H "Authorization: Bearer $OXI_TOKEN" -X POST http://localhost:9853/api/tokens \
   -H 'Content-Type: application/json' \
   -d '{"name": "monitoring", "permissions": ["view_stats"]}'
 
 # Revoke token
-curl -b cookies.txt -X DELETE http://localhost:9853/api/tokens/1
+curl -H "Authorization: Bearer $OXI_TOKEN" -X DELETE http://localhost:9853/api/tokens/1
 ```
 
 | Method | Endpoint | Description |
