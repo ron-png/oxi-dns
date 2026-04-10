@@ -160,13 +160,19 @@ During a fresh install, the script interactively prompts for:
 Examples:
 ```bash
 # Install latest stable
-curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh" | sh
+URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh"; \
+  (curl -fsSL "$URL" 2>/dev/null || wget -qO- "$URL" 2>/dev/null || \
+   fetch -qo- "$URL" 2>/dev/null || ftp -Vo - "$URL" 2>/dev/null) | sh
 
 # Install latest development (pre-release)
-curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh" | sh -s -- -c development
+URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh"; \
+  (curl -fsSL "$URL" 2>/dev/null || wget -qO- "$URL" 2>/dev/null || \
+   fetch -qo- "$URL" 2>/dev/null || ftp -Vo - "$URL" 2>/dev/null) | sh -s -- -c development
 
 # Install a specific version
-curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh" | sh -s -- -V v0.4.0.9-dev
+URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh"; \
+  (curl -fsSL "$URL" 2>/dev/null || wget -qO- "$URL" 2>/dev/null || \
+   fetch -qo- "$URL" 2>/dev/null || ftp -Vo - "$URL" 2>/dev/null) | sh -s -- -V v0.4.0.9-dev
 ```
 
 ### Docker / Podman
@@ -258,7 +264,9 @@ sudo /opt/oxi-dns/uninstall.sh
 Alternatively, via the install script:
 
 ```bash
-curl -sSL "https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh" | sh -s -- -u
+URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh"; \
+  (curl -fsSL "$URL" 2>/dev/null || wget -qO- "$URL" 2>/dev/null || \
+   fetch -qo- "$URL" 2>/dev/null || ftp -Vo - "$URL" 2>/dev/null) | sh -s -- -u
 ```
 
 ## Contributing
@@ -271,7 +279,6 @@ Please note that this list is not a promise, rather thoughts I might change my m
 
 ### Goals for Version 1:
 - Make the UI more user friendly (feature)
-- The horizontal scroll bar at the logs tab is a bit funky (visual Bug)
 - The root servers toggle has the description with "Maximum Privacy". This needs elaboration. 
 - Verify DNS over TLS, HTTPS and QUIC work (feature)
 - When enabling DoH, the user should be able to define the https request path (feature)
