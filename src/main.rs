@@ -3,6 +3,7 @@ compile_error!(
     "oxi-dns only supports Unix platforms (Linux, macOS, FreeBSD). Use Docker for other platforms."
 );
 
+mod acme;
 mod auth;
 mod blocklist;
 mod cert_parser;

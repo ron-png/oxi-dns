@@ -262,7 +262,7 @@ async fn query_txt_via_udp(fqdn: &str, resolver: SocketAddr, expected_value: &st
     let response = Message::from_bytes(&response_bytes)?;
 
     for record in response.answers() {
-        if let Some(RData::TXT(txt)) = record.data() {
+        if let RData::TXT(txt) = record.data() {
             for part in txt.iter() {
                 if let Ok(s) = std::str::from_utf8(part) {
                     if s == expected_value {
