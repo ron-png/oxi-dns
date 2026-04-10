@@ -147,13 +147,17 @@ pub async fn issue_certificate(
     )
     .await;
 
-    let identifier = Identifier::Dns(domain.clone());
+    let wildcard = format!("*.{}", domain);
+    let identifiers = vec![
+        Identifier::Dns(domain.clone()),
+        Identifier::Dns(wildcard.clone()),
+    ];
     let mut order = account
-        .new_order(&NewOrder::new(&[identifier]))
+        .new_order(&NewOrder::new(&identifiers))
         .await
         .context("Failed to place ACME order")?;
 
-    info!("ACME order placed for domain {}", domain);
+    info!("ACME order placed for {} + {}", domain, wildcard);
 
     // ── Step 3: Get DNS-01 challenge ─────────────────────────────────────────
     set_progress(
@@ -163,27 +167,26 @@ pub async fn issue_certificate(
     )
     .await;
 
+    let mut cf_record_ids: Vec<String> = Vec::new();
+    let record_name = format!("_acme-challenge.{}", domain);
+
+    // Process each authorization's DNS-01 challenge (base domain + wildcard)
     let mut authorizations = order.authorizations();
-    let mut authz_handle = authorizations
-        .next()
-        .await
-        .context("No ACME authorizations returned")?
-        .context("Failed to fetch ACME authorization")?;
+    while let Some(authz_result) = authorizations.next().await {
+        let mut authz_handle = authz_result.context("Failed to fetch ACME authorization")?;
+        if authz_handle.status == AuthorizationStatus::Valid {
+            continue;
+        }
 
-    let mut cf_record_id: Option<String> = None;
-
-    if authz_handle.status != AuthorizationStatus::Valid {
         let mut challenge_handle = authz_handle
             .challenge(ChallengeType::Dns01)
             .context("No DNS-01 challenge found in authorization")?;
 
         let key_auth = challenge_handle.key_authorization();
         let dns_value = key_auth.dns_value();
-        let record_name = format!("_acme-challenge.{}", domain);
 
         info!("DNS-01 challenge: {} = {}", record_name, dns_value);
 
-        // ── Step 4/5: Provider-specific challenge fulfillment ────────────────
         if acme_config.provider == "cloudflare" {
             let cf = providers::CloudflareProvider::new(&acme_config.cloudflare_api_token);
 
@@ -199,11 +202,9 @@ pub async fn issue_certificate(
                 .await
                 .context("Failed to create Cloudflare TXT record")?;
 
-            cf_record_id = Some(record_id);
+            cf_record_ids.push(record_id);
 
-            info!("Polling for DNS propagation of {}", record_name);
-
-            // Poll for propagation (up to 40 tries, 5s apart = 200s max)
+            // Poll for propagation
             let mut propagated = false;
             for attempt in 1..=40u32 {
                 tokio::time::sleep(std::time::Duration::from_secs(5)).await;
@@ -226,7 +227,7 @@ pub async fn issue_certificate(
                 warn!("DNS TXT record may not have fully propagated after 200s, proceeding anyway");
             }
         } else {
-            // Manual provider
+            // Manual provider — show all challenge values
             set_progress_challenge(
                 &progress,
                 "Add the following DNS TXT record manually, then click Confirm.",
@@ -235,7 +236,6 @@ pub async fn issue_certificate(
             )
             .await;
 
-            // Wait for user confirmation, background polling, or 10-minute timeout
             let confirmed = tokio::select! {
                 _ = manual_confirm.notified() => {
                     info!("Manual DNS challenge confirmed by user");
@@ -260,7 +260,7 @@ pub async fn issue_certificate(
             }
         }
 
-        // Notify ACME server that challenge is ready
+        // Notify ACME server that this challenge is ready
         challenge_handle
             .set_ready()
             .await
@@ -345,12 +345,21 @@ pub async fn issue_certificate(
     info!("Certificate installed to {} and {}", CERT_PATH, KEY_PATH);
 
     // ── Step 9: Cleanup ──────────────────────────────────────────────────────
-    if let Some(record_id) = cf_record_id {
+    if !cf_record_ids.is_empty() {
         let cf = providers::CloudflareProvider::new(&acme_config.cloudflare_api_token);
-        if let Err(e) = cf.delete_txt_record(&domain, &record_id).await {
-            warn!("Failed to delete Cloudflare TXT record: {}", e);
-        } else {
-            info!("Cleaned up Cloudflare TXT record");
+        for record_id in &cf_record_ids {
+            if let Err(e) = cf.delete_txt_record(&domain, record_id).await {
+                warn!(
+                    "Failed to delete Cloudflare TXT record {}: {}",
+                    record_id, e
+                );
+            }
+        }
+        if !cf_record_ids.is_empty() {
+            info!(
+                "Cleaned up {} Cloudflare TXT record(s)",
+                cf_record_ids.len()
+            );
         }
     }
 

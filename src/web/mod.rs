@@ -406,6 +406,7 @@ pub async fn run_web_server(
         .route("/api/system/tls/acme/status", get(api_acme_status))
         .route("/api/system/tls/acme/renew", post(api_acme_renew))
         .route("/api/system/tls/acme/auto-renew", post(api_acme_auto_renew))
+        .route("/api/system/tls/download", post(api_tls_download))
         // Query log
         .route("/api/logs", get(api_logs))
         .route("/api/logs/settings", get(api_get_log_settings))
@@ -2534,6 +2535,87 @@ async fn api_acme_auto_renew(
     }
 
     Json(serde_json::json!({"status": "ok", "enabled": enabled})).into_response()
+}
+
+async fn api_tls_download(
+    State(state): State<AppState>,
+    axum::Extension(user): axum::Extension<AuthenticatedUser>,
+    axum::Json(body): axum::Json<serde_json::Value>,
+) -> Response {
+    if !user.permissions.contains(&Permission::ManageSystem) {
+        return StatusCode::FORBIDDEN.into_response();
+    }
+
+    // Require password confirmation
+    let password = match body["password"].as_str() {
+        Some(p) if !p.is_empty() => p,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": "Password is required"})),
+            )
+                .into_response();
+        }
+    };
+
+    if !state.auth.verify_password(user.id, password).await {
+        return (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({"error": "Invalid password"})),
+        )
+            .into_response();
+    }
+
+    // Load current cert and key paths from config
+    let config = match crate::config::Config::load(&state.config_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": "Failed to load config"})),
+            )
+                .into_response();
+        }
+    };
+
+    let cert_path = config
+        .tls
+        .cert_path
+        .as_deref()
+        .unwrap_or(crate::acme::CERT_PATH);
+    let key_path = config
+        .tls
+        .key_path
+        .as_deref()
+        .unwrap_or(crate::acme::KEY_PATH);
+
+    let cert_pem = match std::fs::read_to_string(cert_path) {
+        Ok(c) => c,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "No certificate file found"})),
+            )
+                .into_response();
+        }
+    };
+
+    let key_pem = match std::fs::read_to_string(key_path) {
+        Ok(k) => k,
+        Err(_) => {
+            return (
+                StatusCode::NOT_FOUND,
+                Json(serde_json::json!({"error": "No key file found"})),
+            )
+                .into_response();
+        }
+    };
+
+    Json(serde_json::json!({
+        "cert_pem": cert_pem,
+        "key_pem": key_pem,
+    }))
+    .into_response()
 }
 
 async fn api_get_release_channel(

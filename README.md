@@ -275,8 +275,11 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - Make the UI more user friendly (feature)
 - Verify DNS over TLS, HTTPS and QUIC work (feature)
 - When enabling DoH, the user should be able to define the https request path (feature)
+- if the user wants a subdomain different subdomain for DoH, DoT and DoQ, the user should be able to define it in the UI (feature)
+  - this should include the ability that the server automatically creates the needed certificates for the subdomain (if not already present).
+  - if the subdomain doesn't exist, the server should create a DNS A record for the subdomain pointing to the server's IP address.
 - in addition, harden DoH, DoT and DoQ (feature) (pathing attacks, etc)
-- Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands.
+- Verify that changing Settings in the UI (Like Port or listen address) works with the generated terminal commands. (ipv4 yes, ipv6 has to be fixed)
 
 ### Goals for Version 2:
 - Add a "Test" button for the upstream DNS servers (feature)
@@ -291,6 +294,7 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - logging system errors
 - DHCP Server
 - redundancy feature. Dns server cluster
+- multiple subdomains using multiple filter configurations (feature)
 
 ### Goals for Version 3:
 - More statistics, fancy graphs and more

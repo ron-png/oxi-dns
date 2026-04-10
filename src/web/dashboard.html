@@ -3430,7 +3430,16 @@
                     Auto-renew certificate <span style="color:var(--text-muted);">(Cloudflare only)</span>
                 </label>
             </div>
+            <div id="certDownloadArea" style="display:none;margin-bottom:16px;">
+                <div class="form-group">
+                    <label>Enter your password to export</label>
+                    <input type="password" id="certExportPassword" placeholder="WebUI password" />
+                </div>
+                <button class="btn btn-accent btn-sm" onclick="downloadCert()">Export</button>
+                <span id="certDownloadMsg" style="font-size:12px;margin-left:8px;"></span>
+            </div>
             <div class="modal-actions">
+                <button class="btn btn-sm" onclick="showCertDownload()">Export Certificate</button>
                 <button class="btn btn-sm" style="background:var(--danger);color:#fff;" onclick="removeTlsCert()">Remove &amp; use self-signed</button>
             </div>
         </div>
@@ -3707,6 +3716,50 @@
             if (!el) return;
             el.textContent = msg;
             el.style.color = type === 'error' ? 'var(--danger)' : type === 'success' ? 'var(--success, #4caf50)' : 'var(--text-muted)';
+        }
+
+        function showCertDownload() {
+            const area = document.getElementById('certDownloadArea');
+            if (area) area.style.display = area.style.display === 'none' ? '' : 'none';
+        }
+
+        async function downloadCert() {
+            const password = document.getElementById('certExportPassword').value;
+            const msg = document.getElementById('certDownloadMsg');
+            if (!password) { if (msg) { msg.textContent = 'Password required'; msg.style.color = 'var(--danger)'; } return; }
+            try {
+                const res = await fetch('/api/system/tls/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ password }),
+                });
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    if (msg) { msg.textContent = data.error || 'Export failed'; msg.style.color = 'var(--danger)'; }
+                    return;
+                }
+                const data = await res.json();
+                // Download cert
+                const certBlob = new Blob([data.cert_pem], { type: 'application/x-pem-file' });
+                const certUrl = URL.createObjectURL(certBlob);
+                const certLink = document.createElement('a');
+                certLink.href = certUrl;
+                certLink.download = 'cert.pem';
+                certLink.click();
+                URL.revokeObjectURL(certUrl);
+                // Download key
+                const keyBlob = new Blob([data.key_pem], { type: 'application/x-pem-file' });
+                const keyUrl = URL.createObjectURL(keyBlob);
+                const keyLink = document.createElement('a');
+                keyLink.href = keyUrl;
+                keyLink.download = 'key.pem';
+                keyLink.click();
+                URL.revokeObjectURL(keyUrl);
+                if (msg) { msg.textContent = 'Downloaded!'; msg.style.color = 'var(--success, #4caf50)'; }
+                document.getElementById('certExportPassword').value = '';
+            } catch (e) {
+                if (msg) { msg.textContent = 'Export failed'; msg.style.color = 'var(--danger)'; }
+            }
         }
 
         // ---- Network Settings ----
