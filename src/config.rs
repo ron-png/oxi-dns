@@ -288,7 +288,7 @@ fn default_dns() -> DnsConfig {
 fn default_web() -> WebConfig {
     WebConfig {
         listen: default_web_listen(),
-        https_listen: Some(default_web_listen()),
+        https_listen: default_web_https_listen(),
     }
 }
 
@@ -301,7 +301,7 @@ fn default_web_listen() -> Vec<String> {
 }
 
 fn default_web_https_listen() -> Option<Vec<String>> {
-    Some(default_web_listen())
+    Some(vec!["0.0.0.0:9854".to_string(), "[::]:9854".to_string()])
 }
 
 fn default_upstreams() -> Vec<String> {

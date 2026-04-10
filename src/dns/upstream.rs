@@ -245,35 +245,11 @@ async fn udp_query(
 /// Resolve a hostname to IP addresses by walking the DNS hierarchy from root servers.
 /// Standalone function — no UpstreamForwarder needed. Used as fallback when the
 /// system resolver is unavailable (e.g. oxi-dns is the system DNS and is restarting).
+///
+/// Delegates to `iterative_walk` with a temporary NsCache, then extracts A/AAAA
+/// records from the result. Also queries AAAA separately to collect both address families.
 async fn resolve_via_root_servers(host: &str, port: u16) -> anyhow::Result<Vec<SocketAddr>> {
-    resolve_via_root_servers_inner(host, port, 0).await
-}
-
-/// Inner implementation with recursion depth tracking for glueless referrals.
-fn resolve_via_root_servers_inner(
-    host: &str,
-    port: u16,
-    recursion_depth: u8,
-) -> std::pin::Pin<Box<dyn std::future::Future<Output = anyhow::Result<Vec<SocketAddr>>> + Send + '_>>
-{
-    Box::pin(resolve_via_root_servers_walk(host, port, recursion_depth))
-}
-
-async fn resolve_via_root_servers_walk(
-    host: &str,
-    port: u16,
-    recursion_depth: u8,
-) -> anyhow::Result<Vec<SocketAddr>> {
-    use hickory_proto::op::ResponseCode;
     use hickory_proto::rr::{Name, RData, RecordType};
-
-    const MAX_GLUELESS_DEPTH: u8 = 3;
-    if recursion_depth >= MAX_GLUELESS_DEPTH {
-        anyhow::bail!(
-            "Root fallback: max glueless recursion depth exceeded for {}",
-            host
-        );
-    }
 
     let fqdn = if host.ends_with('.') {
         host.to_string()
@@ -282,127 +258,45 @@ async fn resolve_via_root_servers_walk(
     };
     let name = Name::from_ascii(&fqdn)?;
     let timeout = Duration::from_secs(5);
+    let tmp_cache: NsCache = DashMap::new();
 
-    let mut current_servers: Vec<SocketAddr> = ROOT_SERVERS
-        .iter()
-        .map(|ip| SocketAddr::new(IpAddr::V4(*ip), 53))
-        .chain(
-            ROOT_SERVERS_V6
-                .iter()
-                .map(|ip| SocketAddr::new(IpAddr::V6(*ip), 53)),
-        )
-        .collect();
+    let mut addrs = Vec::new();
 
-    for _depth in 0..MAX_REFERRAL_DEPTH {
-        let query_packet = build_query(rand::random::<u16>(), &name, RecordType::A, false)?;
-
-        // Try each server until one responds
-        let mut resp = None;
-        for server in &current_servers {
-            match udp_query(&query_packet, *server, timeout).await {
-                Ok(msg) => {
-                    resp = Some(msg);
-                    break;
-                }
-                Err(e) => {
-                    warn!("Root fallback: {} failed: {}", server, e);
+    // Resolve A records
+    match iterative_walk(name.clone(), RecordType::A, timeout, &tmp_cache).await {
+        Ok(WalkOutcome::Answers(records)) => {
+            for r in &records {
+                if let RData::A(ip) = r.data() {
+                    addrs.push(SocketAddr::new(IpAddr::V4(ip.0), port));
                 }
             }
         }
-        let resp = resp.ok_or_else(|| {
-            anyhow::anyhow!("Root fallback: all servers failed resolving {}", host)
-        })?;
-
-        // Got A records — done
-        let addrs: Vec<SocketAddr> = resp
-            .answers()
-            .iter()
-            .filter_map(|r| match r.data() {
-                RData::A(ip) => Some(SocketAddr::new(IpAddr::V4(ip.0), port)),
-                _ => None,
-            })
-            .collect();
-        // Also try AAAA if we got A records (or even if we didn't, to collect both)
-        let mut all_addrs = addrs;
-        {
-            let aaaa_packet = build_query(rand::random::<u16>(), &name, RecordType::AAAA, false)?;
-            for server in &current_servers {
-                if let Ok(aaaa_resp) = udp_query(&aaaa_packet, *server, timeout).await {
-                    for r in aaaa_resp.answers() {
-                        if let RData::AAAA(ip) = r.data() {
-                            all_addrs.push(SocketAddr::new(IpAddr::V6(ip.0), port));
-                        }
-                    }
-                    break;
-                }
-            }
+        Ok(_) => {} // NxDomain or NoData — no A records
+        Err(e) => {
+            warn!("Root fallback A lookup for {}: {}", host, e);
         }
-        if !all_addrs.is_empty() {
-            return Ok(all_addrs);
-        }
-
-        // NXDOMAIN or non-NOERROR — give up
-        if resp.response_code() != ResponseCode::NoError {
-            anyhow::bail!(
-                "Root fallback: {} returned {:?}",
-                host,
-                resp.response_code()
-            );
-        }
-
-        // Follow referral: extract NS names, then glue A records
-        let ns_names: Vec<String> = resp
-            .name_servers()
-            .iter()
-            .filter_map(|r| match r.data() {
-                RData::NS(ns) => Some(ns.0.to_ascii()),
-                _ => None,
-            })
-            .collect();
-
-        if ns_names.is_empty() {
-            anyhow::bail!("Root fallback: no referral for {}", host);
-        }
-
-        let mut next_servers = Vec::new();
-        for record in resp.additionals() {
-            let rec_name = record.name().to_ascii();
-            if ns_names.iter().any(|n| n == &rec_name) {
-                match record.data() {
-                    RData::A(ip) => {
-                        next_servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
-                    }
-                    RData::AAAA(ip) => {
-                        next_servers.push(SocketAddr::new(IpAddr::V6(ip.0), 53));
-                    }
-                    _ => {}
-                }
-            }
-        }
-
-        // Glueless referral: resolve NS hostnames recursively.
-        if next_servers.is_empty() {
-            for ns_name in &ns_names {
-                let stripped = ns_name.trim_end_matches('.');
-                if let Ok(addrs) =
-                    resolve_via_root_servers_inner(stripped, 53, recursion_depth + 1).await
-                {
-                    next_servers.extend(addrs);
-                    if !next_servers.is_empty() {
-                        break;
-                    }
-                }
-            }
-        }
-
-        if next_servers.is_empty() {
-            anyhow::bail!("Root fallback: no usable NS for {} referral", host);
-        }
-
-        current_servers = next_servers;
     }
 
-    anyhow::bail!("Root fallback: max referral depth exceeded for {}", host)
+    // Resolve AAAA records (reuses ns_cache from the A walk)
+    match iterative_walk(name, RecordType::AAAA, timeout, &tmp_cache).await {
+        Ok(WalkOutcome::Answers(records)) => {
+            for r in &records {
+                if let RData::AAAA(ip) = r.data() {
+                    addrs.push(SocketAddr::new(IpAddr::V6(ip.0), port));
+                }
+            }
+        }
+        Ok(_) => {}
+        Err(e) => {
+            warn!("Root fallback AAAA lookup for {}: {}", host, e);
+        }
+    }
+
+    if addrs.is_empty() {
+        anyhow::bail!("Root fallback: no A/AAAA records found for {}", host);
+    }
+
+    Ok(addrs)
 }
 
 /// Outcome of a single-name iterative walk.
@@ -653,12 +547,48 @@ async fn iterative_walk(
                 }
             }
 
-            // Glueless referral: resolve NS hostnames via the bootstrap walker.
+            // Glueless referral: resolve NS hostnames using the same walker
+            // and shared ns_cache (avoids a separate bootstrap resolver).
             if next_servers.is_empty() {
                 for ns_name in &ns_names {
-                    let stripped = ns_name.trim_end_matches('.');
-                    if let Ok(addrs) = resolve_via_root_servers(stripped, 53).await {
-                        next_servers.extend(addrs);
+                    let ns_fqdn = if ns_name.ends_with('.') {
+                        ns_name.clone()
+                    } else {
+                        format!("{}.", ns_name)
+                    };
+                    if let Ok(ns_name_parsed) = hickory_proto::rr::Name::from_ascii(&ns_fqdn) {
+                        // Resolve A records for the NS hostname
+                        if let Ok(WalkOutcome::Answers(records)) = Box::pin(iterative_walk(
+                            ns_name_parsed.clone(),
+                            RecordType::A,
+                            timeout,
+                            ns_cache,
+                        ))
+                        .await
+                        {
+                            for r in &records {
+                                if let RData::A(ip) = r.data() {
+                                    next_servers.push(SocketAddr::new(IpAddr::V4(ip.0), 53));
+                                }
+                            }
+                        }
+                        // Also try AAAA
+                        if next_servers.is_empty() {
+                            if let Ok(WalkOutcome::Answers(records)) = Box::pin(iterative_walk(
+                                ns_name_parsed,
+                                RecordType::AAAA,
+                                timeout,
+                                ns_cache,
+                            ))
+                            .await
+                            {
+                                for r in &records {
+                                    if let RData::AAAA(ip) = r.data() {
+                                        next_servers.push(SocketAddr::new(IpAddr::V6(ip.0), 53));
+                                    }
+                                }
+                            }
+                        }
                         if !next_servers.is_empty() {
                             break;
                         }
@@ -729,6 +659,9 @@ impl CacheEntry {
 
 const CACHE_TTL_FLOOR: u32 = 5;
 const CACHE_TTL_CEILING: u32 = 86400;
+/// Maximum number of cached DNS responses. When exceeded during eviction,
+/// entries closest to expiry are dropped first.
+const CACHE_MAX_SIZE: usize = 100_000;
 
 /// Extract the appropriate cache TTL from a DNS response.
 /// For negative responses (NXDOMAIN/NODATA), uses the SOA minimum TTL
@@ -967,6 +900,25 @@ impl UpstreamForwarder {
         let before = self.cache.len();
         self.cache.retain(|_, entry| !entry.is_expired());
         self.ns_cache.retain(|_, entry| !entry.is_expired());
+
+        // Enforce max cache size: drop entries closest to expiry
+        if self.cache.len() > CACHE_MAX_SIZE {
+            let mut entries: Vec<((String, u16), Instant)> = self
+                .cache
+                .iter()
+                .map(|e| (e.key().clone(), e.value().expires_at))
+                .collect();
+            entries.sort_by_key(|(_, exp)| *exp);
+            let to_remove = self.cache.len() - CACHE_MAX_SIZE;
+            for (key, _) in entries.into_iter().take(to_remove) {
+                self.cache.remove(&key);
+            }
+            tracing::info!(
+                "Cache size limit enforced: evicted {} entries (max {})",
+                to_remove,
+                CACHE_MAX_SIZE
+            );
+        }
 
         // Clean up closed DoQ connections
         self.doq_pool.retain(|_, entry| {
