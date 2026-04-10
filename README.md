@@ -263,6 +263,420 @@ URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh";
    fetch -qo- "$URL" 2>/dev/null || ftp -Vo - "$URL" 2>/dev/null) | sh -s -- -u
 ```
 
+## API Reference
+
+All endpoints are served on the web dashboard port (default `9853`). Authentication is via session cookie (from `/api/auth/login`) or API token (via `Authorization: Bearer <token>` header).
+
+### Authentication
+
+```bash
+# Login (returns session cookie)
+curl -c cookies.txt -X POST http://localhost:9853/api/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"username": "admin", "password": "yourpassword"}'
+
+# Use session cookie for subsequent requests
+curl -b cookies.txt http://localhost:9853/api/stats
+
+# Or use an API token (create one in the dashboard under Advanced > API Tokens)
+curl -H 'Authorization: Bearer your-api-token' http://localhost:9853/api/stats
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/auth/login` | Login with username/password |
+| `POST` | `/api/auth/logout` | End session |
+| `GET` | `/api/auth/me` | Current user info and permissions |
+| `POST` | `/api/auth/change-password` | Change own password |
+| `POST` | `/api/auth/setup` | Initial admin account setup |
+
+### Stats & Queries
+
+```bash
+# Get current stats
+curl -b cookies.txt http://localhost:9853/api/stats
+
+# Get query log (with search and filtering)
+curl -b cookies.txt 'http://localhost:9853/api/logs?search=google.com&status=blocked&limit=50'
+
+# Get historical stats (time-series)
+curl -b cookies.txt http://localhost:9853/api/stats/history
+
+# Top queried/blocked domains
+curl -b cookies.txt http://localhost:9853/api/stats/top-domains
+
+# Stats summary
+curl -b cookies.txt http://localhost:9853/api/stats/summary
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/stats` | Current query statistics |
+| `GET` | `/api/stats/history` | Historical time-series data |
+| `GET` | `/api/stats/top-domains` | Top queried and blocked domains |
+| `GET` | `/api/stats/summary` | Aggregated stats summary |
+| `GET` | `/api/queries` | Query log (supports `search`, `status`, `before_id`, `limit` params) |
+| `GET` | `/api/logs` | Query log (same as `/api/queries`) |
+| `GET` | `/api/logs/settings` | Log retention settings |
+| `POST` | `/api/logs/settings` | Update log/stats retention and anonymization |
+
+### Blocking
+
+```bash
+# Check blocking status
+curl -b cookies.txt http://localhost:9853/api/blocking
+
+# Disable blocking (e.g., for 5 minutes)
+curl -b cookies.txt -X POST http://localhost:9853/api/blocking/disable
+
+# Re-enable blocking
+curl -b cookies.txt -X POST http://localhost:9853/api/blocking/enable
+
+# Get blocking mode
+curl -b cookies.txt http://localhost:9853/api/blocking/mode
+
+# Set blocking mode
+curl -b cookies.txt -X POST http://localhost:9853/api/blocking/mode \
+  -H 'Content-Type: application/json' \
+  -d '{"mode": "refused"}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/blocking` | Current blocking status |
+| `POST` | `/api/blocking/enable` | Enable blocking |
+| `POST` | `/api/blocking/disable` | Disable blocking |
+| `GET` | `/api/blocking/mode` | Get blocking mode |
+| `POST` | `/api/blocking/mode` | Set mode (`default`, `refused`, `nxdomain`, `null_ip`, `custom_ip`) |
+
+### Domain Management
+
+```bash
+# List custom blocked domains
+curl -b cookies.txt http://localhost:9853/api/blocklist/custom
+
+# Block a domain
+curl -b cookies.txt -X POST http://localhost:9853/api/blocklist/add \
+  -H 'Content-Type: application/json' \
+  -d '{"domain": "example.com"}'
+
+# Unblock a domain
+curl -b cookies.txt -X POST http://localhost:9853/api/blocklist/remove \
+  -H 'Content-Type: application/json' \
+  -d '{"domain": "example.com"}'
+
+# List allowlisted domains
+curl -b cookies.txt http://localhost:9853/api/allowlist
+
+# Add to allowlist
+curl -b cookies.txt -X POST http://localhost:9853/api/allowlist/add \
+  -H 'Content-Type: application/json' \
+  -d '{"domain": "safe.example.com"}'
+
+# Remove from allowlist
+curl -b cookies.txt -X POST http://localhost:9853/api/allowlist/remove \
+  -H 'Content-Type: application/json' \
+  -d '{"domain": "safe.example.com"}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/blocklist/custom` | List custom blocked domains |
+| `POST` | `/api/blocklist/add` | Add domain to blocklist |
+| `POST` | `/api/blocklist/remove` | Remove domain from blocklist |
+| `GET` | `/api/allowlist` | List allowlisted domains |
+| `POST` | `/api/allowlist/add` | Add domain to allowlist |
+| `POST` | `/api/allowlist/remove` | Remove domain from allowlist |
+
+### Blocklist Sources
+
+```bash
+# List blocklist sources
+curl -b cookies.txt http://localhost:9853/api/blocklist-sources
+
+# Add a blocklist source
+curl -b cookies.txt -X POST http://localhost:9853/api/blocklist-source/add \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"}'
+
+# Remove a blocklist source
+curl -b cookies.txt -X POST http://localhost:9853/api/blocklist-source/remove \
+  -H 'Content-Type: application/json' \
+  -d '{"url": "https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts"}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/blocklist-sources` | List all blocklist sources |
+| `POST` | `/api/blocklist-source/add` | Add blocklist URL |
+| `POST` | `/api/blocklist-source/remove` | Remove blocklist URL |
+| `GET` | `/api/blocklist-sources/refresh` | Trigger refresh (SSE stream) |
+| `GET` | `/api/blocklist-sources/last-refresh` | Last refresh timestamp |
+
+### Feature Toggles
+
+```bash
+# List all features
+curl -b cookies.txt http://localhost:9853/api/features
+
+# Enable root server resolution
+curl -b cookies.txt -X POST http://localhost:9853/api/features/root_servers \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled": true}'
+```
+
+Available feature IDs: `ads_malware`, `nsfw`, `safe_search`, `youtube_safe_search`, `root_servers`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/features` | List all features with status |
+| `POST` | `/api/features/{id}` | Toggle feature on/off |
+
+### Upstream DNS
+
+```bash
+# List configured upstreams
+curl -b cookies.txt http://localhost:9853/api/upstreams
+
+# Add an upstream (supports udp://, tls://, https://, quic://)
+curl -b cookies.txt -X POST http://localhost:9853/api/upstreams/add \
+  -H 'Content-Type: application/json' \
+  -d '{"upstream": "tls://1.1.1.1"}'
+
+# Remove an upstream
+curl -b cookies.txt -X POST http://localhost:9853/api/upstreams/remove \
+  -H 'Content-Type: application/json' \
+  -d '{"upstream": "tls://1.1.1.1"}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/upstreams` | List upstream DNS servers |
+| `POST` | `/api/upstreams/add` | Add upstream server |
+| `POST` | `/api/upstreams/remove` | Remove upstream server |
+
+### Cache
+
+```bash
+# Cache statistics
+curl -b cookies.txt http://localhost:9853/api/cache/stats
+
+# Flush the cache
+curl -b cookies.txt -X POST http://localhost:9853/api/cache/flush
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/cache/stats` | Cache hit/miss statistics |
+| `POST` | `/api/cache/flush` | Clear all cached DNS responses |
+
+### Network Configuration
+
+```bash
+# Get current network listen addresses and interfaces
+curl -b cookies.txt http://localhost:9853/api/system/network
+
+# Update optional protocol listeners (DoT, DoH, DoQ)
+curl -b cookies.txt -X POST http://localhost:9853/api/system/network \
+  -H 'Content-Type: application/json' \
+  -d '{"dot_listen": ["0.0.0.0:853", "[::]:853"]}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/system/network` | Current listen addresses and network interfaces |
+| `POST` | `/api/system/network` | Update DoT/DoH/DoQ listen addresses (DNS and web require `--reconfigure`) |
+
+### TLS Certificate Management
+
+```bash
+# Get current certificate info
+curl -b cookies.txt http://localhost:9853/api/system/tls
+
+# Upload PEM certificate
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/upload \
+  -F 'cert_file=@cert.pem' -F 'key_file=@key.pem'
+
+# Upload PKCS12 certificate
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/upload \
+  -F 'p12_file=@certificate.p12' -F 'password=mypassword'
+
+# Remove certificate (revert to self-signed)
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/remove
+
+# Download certificate (requires password confirmation)
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/download \
+  -H 'Content-Type: application/json' \
+  -d '{"password": "yourpassword"}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/system/tls` | Current certificate info (subject, issuer, expiry) |
+| `POST` | `/api/system/tls/upload` | Upload PEM or PKCS12 certificate |
+| `POST` | `/api/system/tls/remove` | Revert to self-signed certificate |
+| `POST` | `/api/system/tls/download` | Export cert + key PEM (requires password) |
+
+### ACME / Let's Encrypt
+
+```bash
+# Issue a wildcard certificate via Cloudflare DNS
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/issue \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "domain": "example.com",
+    "email": "admin@example.com",
+    "provider": "cloudflare",
+    "cloudflare_api_token": "your-cf-api-token",
+    "use_staging": false
+  }'
+
+# Issue via manual DNS (you create the TXT record yourself)
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/issue \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "domain": "example.com",
+    "email": "admin@example.com",
+    "provider": "manual",
+    "use_staging": false
+  }'
+
+# Check issuance progress
+curl -b cookies.txt http://localhost:9853/api/system/tls/acme/status
+
+# Confirm manual DNS challenge (after creating TXT record)
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/confirm
+
+# Trigger manual renewal
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/renew
+
+# Toggle auto-renewal
+curl -b cookies.txt -X POST http://localhost:9853/api/system/tls/acme/auto-renew \
+  -H 'Content-Type: application/json' \
+  -d '{"enabled": true}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/system/tls/acme/issue` | Start certificate issuance (issues `example.com` + `*.example.com`) |
+| `GET` | `/api/system/tls/acme/status` | Issuance progress and ACME config |
+| `POST` | `/api/system/tls/acme/confirm` | Confirm manual DNS challenge |
+| `POST` | `/api/system/tls/acme/renew` | Trigger immediate renewal |
+| `POST` | `/api/system/tls/acme/auto-renew` | Enable/disable auto-renewal |
+
+### System
+
+```bash
+# Get version info
+curl -b cookies.txt http://localhost:9853/api/system/version
+
+# Check for updates
+curl -b cookies.txt -X POST http://localhost:9853/api/system/version/check
+
+# Perform update
+curl -b cookies.txt -X POST http://localhost:9853/api/system/update
+
+# Restart service
+curl -b cookies.txt -X POST http://localhost:9853/api/system/restart
+
+# Get/set auto-update
+curl -b cookies.txt http://localhost:9853/api/system/auto-update
+curl -b cookies.txt -X POST http://localhost:9853/api/system/auto-update \
+  -H 'Content-Type: application/json' -d '{"enabled": true}'
+
+# Get/set IPv6
+curl -b cookies.txt http://localhost:9853/api/system/ipv6
+curl -b cookies.txt -X POST http://localhost:9853/api/system/ipv6 \
+  -H 'Content-Type: application/json' -d '{"enabled": true}'
+
+# Get/set release channel
+curl -b cookies.txt http://localhost:9853/api/system/release-channel
+curl -b cookies.txt -X POST http://localhost:9853/api/system/release-channel \
+  -H 'Content-Type: application/json' -d '{"channel": "stable"}'
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/system/version` | Version info |
+| `POST` | `/api/system/version/check` | Check for updates |
+| `POST` | `/api/system/update` | Start update |
+| `GET` | `/api/system/update/status` | Update progress |
+| `POST` | `/api/system/restart` | Restart the service |
+| `GET/POST` | `/api/system/auto-update` | Get/set auto-update |
+| `GET/POST` | `/api/system/ipv6` | Get/set IPv6 support |
+| `GET/POST` | `/api/system/release-channel` | Get/set release channel |
+| `GET/POST` | `/api/system/blocklist-interval` | Get/set blocklist refresh interval |
+
+### User Management
+
+```bash
+# List users
+curl -b cookies.txt http://localhost:9853/api/users
+
+# Create user
+curl -b cookies.txt -X POST http://localhost:9853/api/users \
+  -H 'Content-Type: application/json' \
+  -d '{"username": "viewer", "password": "pass123", "permissions": ["view_stats", "view_logs"]}'
+
+# Update user permissions
+curl -b cookies.txt -X PUT http://localhost:9853/api/users/2 \
+  -H 'Content-Type: application/json' \
+  -d '{"permissions": ["view_stats", "view_logs", "manage_features"], "active": true}'
+
+# Reset user password
+curl -b cookies.txt -X POST http://localhost:9853/api/users/2/reset-password \
+  -H 'Content-Type: application/json' \
+  -d '{"new_password": "newpass123"}'
+
+# Delete user
+curl -b cookies.txt -X DELETE http://localhost:9853/api/users/2
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/users` | List all users |
+| `POST` | `/api/users` | Create user |
+| `PUT` | `/api/users/{id}` | Update user permissions/status |
+| `DELETE` | `/api/users/{id}` | Delete user |
+| `POST` | `/api/users/{id}/reset-password` | Reset user password |
+
+### API Tokens
+
+```bash
+# List tokens
+curl -b cookies.txt http://localhost:9853/api/tokens
+
+# Create token
+curl -b cookies.txt -X POST http://localhost:9853/api/tokens \
+  -H 'Content-Type: application/json' \
+  -d '{"name": "monitoring", "permissions": ["view_stats"]}'
+
+# Revoke token
+curl -b cookies.txt -X DELETE http://localhost:9853/api/tokens/1
+```
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `GET` | `/api/tokens` | List API tokens |
+| `POST` | `/api/tokens` | Create API token |
+| `DELETE` | `/api/tokens/{id}` | Revoke API token |
+
+### Permissions
+
+Available permissions for users and API tokens:
+
+| Permission | Description |
+|------------|-------------|
+| `view_stats` | View dashboard statistics |
+| `view_logs` | View query log |
+| `manage_features` | Toggle features (ad blocking, safe search, etc.) |
+| `manage_blocklists` | Add/remove blocklist sources |
+| `manage_allowlist` | Add/remove allowlisted domains |
+| `manage_upstreams` | Add/remove upstream DNS servers |
+| `manage_system` | Network config, TLS, updates, restart |
+| `manage_users` | Create/edit/delete users |
+| `manage_api_tokens` | Create/revoke API tokens |
+
 ## Contributing
 
 Bug reports, feature requests, and pull requests are welcome. Open an issue on GitHub.
