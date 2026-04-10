@@ -258,11 +258,31 @@ fn is_ssrf_target(url: &str) -> bool {
 }
 
 async fn https_redirect(
-    axum::extract::State(https_host): axum::extract::State<String>,
+    axum::extract::State(https_port): axum::extract::State<String>,
+    headers: axum::http::HeaderMap,
     uri: axum::http::Uri,
 ) -> Response {
     let path = uri.path_and_query().map(|pq| pq.as_str()).unwrap_or("/");
-    let url = format!("https://{}{}", https_host, path);
+
+    // Use the Host header so the redirect preserves the hostname/IP the user typed
+    let host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("localhost");
+
+    // Strip existing port from Host header, replace with HTTPS port
+    let host_without_port = if host.starts_with('[') {
+        // IPv6: [::1]:9853 → [::1]
+        host.rsplit_once("]:")
+            .map(|(h, _)| format!("{}]", h))
+            .unwrap_or_else(|| host.to_string())
+    } else {
+        host.rsplit_once(':')
+            .map(|(h, _)| h.to_string())
+            .unwrap_or_else(|| host.to_string())
+    };
+
+    let url = format!("https://{}:{}{}", host_without_port, https_port, path);
     axum::response::Redirect::permanent(&url).into_response()
 }
 
@@ -490,27 +510,17 @@ pub async fn run_web_server(
             }));
         }
 
-        // HTTP becomes redirect-only when HTTPS is active
-        let redirect_target = https_addrs.first().cloned().unwrap_or_default();
-        let redirect_host = {
-            let host_part = redirect_target
-                .rsplit_once(':')
-                .map(|(h, _)| h)
-                .unwrap_or(&redirect_target);
-            let port_part = redirect_target
-                .rsplit_once(':')
-                .map(|(_, p)| p)
-                .unwrap_or("9443");
-            if host_part == "0.0.0.0" || host_part == "[::]" || host_part.is_empty() {
-                format!("localhost:{}", port_part)
-            } else {
-                redirect_target.clone()
-            }
-        };
+        // HTTP becomes redirect-only when HTTPS is active.
+        // Extract just the port from the HTTPS address — the redirect handler
+        // uses the Host header from the request for the hostname.
+        let https_port = https_addrs
+            .first()
+            .and_then(|addr| addr.rsplit_once(':').map(|(_, p)| p.to_string()))
+            .unwrap_or_else(|| "9854".to_string());
 
         let redirect_app = Router::new()
             .fallback(https_redirect)
-            .with_state(redirect_host);
+            .with_state(https_port);
 
         for addr in listen {
             let redirect_app = redirect_app.clone();
