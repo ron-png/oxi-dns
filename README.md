@@ -27,12 +27,14 @@ URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh";
 **Or run with Docker**
 ```bash
 docker run -d --name oxi-dns \
-  -p 53:53/udp -p 53:53/tcp -p 9853:9853 \
-  -v oxi-dns-config:/etc/oxi-dns \
+  -p 53:53/udp -p 53:53/tcp \
+  -p 9853:9853 -p 9854:9854 \
+  -v oxi-dns-data:/etc/oxi-dns \
+  --restart unless-stopped \
   ghcr.io/ron-png/oxi-dns:latest
 ```
 
-Then open the dashboard at **http://<host>:9853** and point a device's DNS at the server's IP. That's it — ads and trackers are blocked network-wide. See [Installation](#installation) and [Configuration](#configuration) for details.
+Then open the dashboard at **http://<host>:9853** (or **https://<host>:9854** with the auto-generated self-signed cert) and point a device's DNS at the server's IP. That's it — ads and trackers are blocked network-wide. See [Installation](#installation) and [Configuration](#configuration) for details.
 
 ## Why Oxi-DNS?
 
@@ -171,17 +173,27 @@ URL="https://raw.githubusercontent.com/ron-png/oxi-dns/main/scripts/install.sh";
 
 ### Docker / Podman
 
-Images are published to GHCR for `linux/amd64` and `linux/arm64`.
+Images are published to GHCR for `linux/amd64` and `linux/arm64`. The same commands work with `podman` — just substitute `podman` for `docker`.
 
 ```bash
 docker run -d \
   --name oxi-dns \
+  --restart unless-stopped \
   -p 53:53/udp \
   -p 53:53/tcp \
   -p 9853:9853 \
-  -v oxi-dns-config:/etc/oxi-dns \
+  -p 9854:9854 \
+  -v oxi-dns-data:/etc/oxi-dns \
   ghcr.io/ron-png/oxi-dns:latest
 ```
+
+The named volume `oxi-dns-data` persists `config.toml` along with the SQLite databases (`query_log.db`, `stats.db`, `auth.db`) that oxi-dns writes next to the config file. A single mount covers config, query logs, historical stats, and user accounts.
+
+Open the dashboard at **http://<host>:9853** or **https://<host>:9854** (HTTPS uses a self-signed certificate by default).
+
+**Encrypted DNS** is off by default in the bundled config — add `-p 853:853/tcp` (DoT), `-p 443:443/tcp` (DoH), and/or `-p 853:853/udp` (DoQ) when you enable the corresponding listeners in `config.toml` or the Network tab of the dashboard.
+
+**Conflict with port 53**: if the host already runs a DNS resolver (e.g. `systemd-resolved`), the `-p 53:53` bindings will fail. Either disable the host resolver, change `dns.listen` in `config.toml` to a different port, or use `--network host` so the container shares the host's network namespace.
 
 Docker Compose:
 
@@ -194,17 +206,22 @@ services:
     ports:
       - "53:53/udp"
       - "53:53/tcp"
-      - "9853:9853"
-      # Uncomment for encrypted DNS:
+      - "9853:9853"   # Web dashboard (HTTP)
+      - "9854:9854"   # Web dashboard (HTTPS, self-signed by default)
+      # Uncomment after enabling the matching listener in config.toml:
       # - "853:853/tcp"   # DoT
       # - "443:443/tcp"   # DoH
       # - "853:853/udp"   # DoQ
     volumes:
-      - oxi-dns-config:/etc/oxi-dns
+      - oxi-dns-data:/etc/oxi-dns
 
 volumes:
-  oxi-dns-config:
+  oxi-dns-data:
 ```
+
+The image ships with the project's default `config.toml` (Quad9 over DoT as upstreams, plain DNS on `:53`, dashboard on `:9853` HTTP / `:9854` HTTPS). On first start with an empty named volume, Docker copies that file into the volume so it persists across recreations — edit it via the dashboard, the API, or directly on the volume.
+
+> **Note on auto-update.** The in-process auto-updater is **disabled by default** and should stay off in containers — pull a new image tag instead. The systemd / launchd zero-downtime update flow described above does not apply to the Docker image.
 
 ## Configuration
 

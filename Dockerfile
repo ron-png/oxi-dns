@@ -12,6 +12,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
 COPY --from=builder /build/target/release/oxi-dns /usr/local/bin/oxi-dns
 COPY config.toml /etc/oxi-dns/config.toml
 
-EXPOSE 53/udp 53/tcp 853/tcp 443/tcp 8080/tcp
+EXPOSE 53/udp 53/tcp 853/tcp 853/udp 443/tcp 9853/tcp 9854/tcp
 
 ENTRYPOINT ["oxi-dns", "/etc/oxi-dns/config.toml"]
