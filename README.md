@@ -5,7 +5,7 @@ A fast, memory-safe DNS sinkhole that blocks ads, trackers, and malware at the n
 Supports plain DNS (UDP), DNS-over-TLS (DoT), DNS-over-HTTPS (DoH), and DNS-over-QUIC (DoQ). Ships as a single static binary with a built-in web dashboard — no dependencies, no containers required.
 
 > [!NOTE]
-> **Still in Beta** I do not recommend using this in any environment other than testing/development. If you're looking for a more battle-tested solution, check out [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome).
+> **This is a young project** - If you're looking for a more battle-tested solution, check out [AdGuard Home](https://github.com/AdguardTeam/AdGuardHome).
 
 
 <img width="934" height="881" alt="SCR-20260402-pajz" src="https://github.com/user-attachments/assets/ba57edf1-308a-49bd-8f1c-0191a32d6939" />
@@ -818,7 +818,6 @@ Bug reports, feature requests, and pull requests are welcome. Open an issue on G
 Please note that this list is not a promise, rather thoughts I might change my mind on in the future. Feel free to share your opinion and suggestions for the future of this project.
 
 ### Goals for Version 1:
-- Make the UI more user friendly (feature)
 - Verify DNS over QUIC work (feature)
 - When enabling DoH, the user should be able to define the https request path (feature)
   - make sure that the path is not used by any other service on the same server.
@@ -833,6 +832,7 @@ Please note that this list is not a promise, rather thoughts I might change my m
 - the oxi-dns command should be able to signal to the web UI that the config has changed and the UI should reload the config. (feature)
 
 ### Goals for Version 2:
+- Make sure that system resources don't get overloaded so the server might crash. (ram and storage management)
 - Add a "Test" button for the upstream DNS servers (feature)
 - add oxi-dns cli commands. (adding certificate, rebooting the server) 
 - Security enhancements
