@@ -1958,7 +1958,7 @@
                         <button type="button" class="user-menu-item" onclick="showTokensSection()">API Tokens</button>
                         <button type="button" class="user-menu-item manage-users-only" onclick="showUsersSection()">Users</button>
                         <div class="user-menu-divider"></div>
-                        <button type="button" class="user-menu-item" data-requires-https="true" onclick="showChangePasswordModal()">Change Password</button>
+                        <button type="button" class="user-menu-item" onclick="showChangePasswordModal()">Change Password</button>
                         <button type="button" class="user-menu-item danger" onclick="signOut()">Sign Out</button>
                     </div>
                 </div>
@@ -1972,7 +1972,7 @@
             <span class="security-banner__icon">⚠</span>
             <div class="security-banner__body">
                 <strong>You're connected over plain HTTP.</strong>
-                Sensitive settings (certificates, ACME tokens, password changes) are greyed out.
+                Sensitive settings (certificates, ACME tokens, password changes) are disabled.
             </div>
             <a id="httpWarningSwitchBtn" class="security-banner__action" href="#">Switch to HTTPS →</a>
         </div>
@@ -2880,6 +2880,26 @@
 
         function showChangePasswordModal() {
             document.getElementById('userMenuDropdown').classList.remove('open');
+            // Changing a password on plain HTTP would transmit the new
+            // password in the clear. The backend blocks this endpoint on
+            // HTTP unconditionally — mirror that in the UI with a clear
+            // warning instead of a broken form.
+            if (window.location.protocol === 'http:') {
+                const httpsUrl = cachedHttpsUrl;
+                openModal(`
+                    <h3>Change Password</h3>
+                    <div class="sensitive-warning">
+                        <span class="sensitive-warning__icon">🔒</span>
+                        <div class="sensitive-warning__title">This feature requires HTTPS</div>
+                        <div>You're connected over plain HTTP. Switch to HTTPS to change your password.</div>
+                        ${httpsUrl ? `<a class="sensitive-warning__btn" href="${httpsUrl}">Switch to HTTPS →</a>` : ''}
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+                    </div>
+                `);
+                return;
+            }
             openModal(`
                 <h3>Change Password</h3>
                 <div class="form-group">
@@ -4394,10 +4414,13 @@
                 const data = await res.json();
                 serverNetworkState.auto_redirect_https = data.auto_redirect_https ?? enabled;
                 refreshSecurityStatus();
+                // Toggling this setting restarts the web server and changes
+                // whether HTTP is redirected. Reload so the browser picks
+                // up the new state (redirect, banner, locked sections).
+                setTimeout(() => window.location.reload(), 800);
             } catch (e) {
                 console.error(e);
                 if (toggle) toggle.checked = !enabled;
-            } finally {
                 if (toggle) toggle.disabled = false;
             }
         }
@@ -5348,6 +5371,11 @@
         }
 
         // ---- HTTP warning banner ----
+        // These run unconditionally whenever the dashboard is loaded over
+        // plain HTTP. TLS endpoints and password changes are blocked by
+        // the backend regardless of the auto_redirect_https toggle — so
+        // the UI must always warn about them and grey out their entry
+        // points when the user is on HTTP.
         let cachedHttpsUrl = null;
 
         function lockSensitiveElements() {
@@ -5363,26 +5391,19 @@
         (function setupHttpBanner() {
             const banner = document.getElementById('httpWarningBanner');
             if (!banner) return;
-            // Nothing to do when the page is already loaded over HTTPS.
             if (window.location.protocol !== 'http:') return;
 
+            // On HTTP, always warn and grey out sensitive entry points.
+            banner.style.display = 'flex';
+            lockSensitiveElements();
+
             const btn = document.getElementById('httpWarningSwitchBtn');
+            if (!btn) return;
 
             fetch('/api/system/network', { credentials: 'include' })
                 .then(r => r.ok ? r.json() : null)
                 .then(data => {
-                    // The auto_redirect_https toggle in Settings is the
-                    // single source of truth for HTTPS enforcement on the
-                    // admin UI. When it's off, we leave everything alone
-                    // regardless of whether HTTPS is configured.
-                    if (!data || !data.auto_redirect_https) return;
-
-                    // Enforcement on: show the top banner and grey out
-                    // every sensitive entry point on the page.
-                    banner.style.display = 'flex';
-                    lockSensitiveElements();
-
-                    if (!btn) return;
+                    if (!data) return;
                     const httpsAddrs = data.https_listen || [];
                     if (httpsAddrs.length === 0) {
                         btn.style.display = 'none';
@@ -5400,10 +5421,7 @@
                     cachedHttpsUrl = url;
                 })
                 .catch(() => {
-                    // Network call failed — do nothing. Fail-open is
-                    // intentional: without a definitive toggle reading we
-                    // must not grey out the UI, because the user may have
-                    // enforcement turned off.
+                    btn.style.display = 'none';
                 });
         })();
 

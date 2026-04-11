@@ -320,34 +320,42 @@ async fn mark_https_from_forwarded_proto_middleware(
     next.run(request).await
 }
 
-/// Paths that handle sensitive data (passwords, API tokens, private keys)
-/// and must be accessed over HTTPS when it's available.
+/// Paths that handle highly sensitive data (private keys, ACME tokens,
+/// password changes). These are ALWAYS blocked on plain HTTP regardless of
+/// the auto_redirect_https toggle — letting users upload a private key over
+/// HTTP would silently leak it on the wire.
 const SENSITIVE_PATHS: &[&str] = &[
     "/api/system/tls/upload",
     "/api/system/tls/download",
     "/api/system/tls/acme/issue",
-    "/api/auth/login",
-    "/api/auth/setup",
     "/api/auth/change-password",
 ];
 
+/// Authentication entry points. These are only blocked on plain HTTP when
+/// the auto_redirect_https toggle is on. When the toggle is off, users must
+/// be able to sign in and run initial setup over HTTP — the toggle is the
+/// single source of truth for HTTPS enforcement on these flows.
+const AUTH_SENSITIVE_PATHS: &[&str] = &["/api/auth/login", "/api/auth/setup"];
+
 async fn sensitive_https_middleware(
-    axum::extract::State(enforce): axum::extract::State<bool>,
+    axum::extract::State(enforce_auth_https): axum::extract::State<bool>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if enforce
-        && request.extensions().get::<IsHttps>().is_none()
-        && SENSITIVE_PATHS.iter().any(|p| request.uri().path() == *p)
-    {
-        return (
-            StatusCode::FORBIDDEN,
-            Json(serde_json::json!({
-                "error": "This endpoint requires HTTPS. Use https:// to access the dashboard securely.",
-                "code": "https_required"
-            })),
-        )
-            .into_response();
+    if request.extensions().get::<IsHttps>().is_none() {
+        let path = request.uri().path();
+        let always_block = SENSITIVE_PATHS.contains(&path);
+        let auth_block = enforce_auth_https && AUTH_SENSITIVE_PATHS.contains(&path);
+        if always_block || auth_block {
+            return (
+                StatusCode::FORBIDDEN,
+                Json(serde_json::json!({
+                    "error": "This endpoint requires HTTPS. Use https:// to access the dashboard securely.",
+                    "code": "https_required"
+                })),
+            )
+                .into_response();
+        }
     }
     next.run(request).await
 }
@@ -3044,10 +3052,11 @@ mod sensitive_https_middleware_tests {
     }
 
     #[tokio::test]
-    async fn allows_http_to_sensitive_path_when_enforcement_disabled() {
-        // With the auto_redirect_https toggle off, HTTP to a sensitive path
-        // must pass through — the toggle is the single source of truth for
-        // HTTPS enforcement on the admin UI.
+    async fn allows_http_to_auth_path_when_enforcement_disabled() {
+        // With the auto_redirect_https toggle off, HTTP to an auth path
+        // (login/setup) must pass through — users need to be able to
+        // sign in and complete initial setup over HTTP when enforcement
+        // is disabled.
         let app = Router::new()
             .route("/api/auth/login", post(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn_with_state(
@@ -3061,6 +3070,45 @@ mod sensitive_https_middleware_tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn blocks_http_to_tls_path_even_when_enforcement_disabled() {
+        // TLS/private-key endpoints are always blocked on HTTP regardless
+        // of the toggle — uploading a key over plain HTTP would leak it.
+        let app = Router::new()
+            .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
+            .layer(axum::middleware::from_fn_with_state(
+                false,
+                sensitive_https_middleware,
+            ));
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/system/tls/upload")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn blocks_http_to_change_password_even_when_enforcement_disabled() {
+        let app = Router::new()
+            .route(
+                "/api/auth/change-password",
+                post(|| async { StatusCode::OK }),
+            )
+            .layer(axum::middleware::from_fn_with_state(
+                false,
+                sensitive_https_middleware,
+            ));
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/auth/change-password")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
     }
 
     #[tokio::test]
