@@ -802,6 +802,10 @@ async fn api_update_network(
     // Track auto-redirect transition for password-change recommendation
     let previous_auto_redirect = config.web.auto_redirect_https;
 
+    // Event flags — set during mutation, emitted as logs only after a successful save.
+    let mut auto_disabled_redirect = false;
+    let mut password_flag_set = false;
+
     if let Some(ref val) = req.https_listen {
         config.web.https_listen = match parse_optional_listen_value(val) {
             Ok(listen) => listen,
@@ -817,9 +821,7 @@ async fn api_update_network(
         // to avoid sending clients to a non-existent listener.
         if config.web.https_listen.is_none() && config.web.auto_redirect_https {
             config.web.auto_redirect_https = false;
-            tracing::info!(
-                "web.https_listen cleared — auto_redirect_https automatically disabled"
-            );
+            auto_disabled_redirect = true;
         }
     }
 
@@ -839,9 +841,7 @@ async fn api_update_network(
     // If auto-redirect transitioned false -> true, set the password-rotation flag.
     if !previous_auto_redirect && config.web.auto_redirect_https {
         config.web.password_change_recommended = true;
-        tracing::info!(
-            "auto_redirect_https enabled — setting password_change_recommended=true"
-        );
+        password_flag_set = true;
     }
 
     if let Some(ref val) = req.dot_listen {
@@ -887,6 +887,14 @@ async fn api_update_network(
             Json(serde_json::json!({"error": format!("{}", e)})),
         )
             .into_response();
+    }
+
+    // Logs fire only after persisted state is confirmed.
+    if auto_disabled_redirect {
+        tracing::info!("web.https_listen cleared — auto_redirect_https automatically disabled");
+    }
+    if password_flag_set {
+        tracing::info!("auto_redirect_https enabled — setting password_change_recommended=true");
     }
 
     let _ = state.restart_signal.send(true);
