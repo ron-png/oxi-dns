@@ -277,6 +277,30 @@
         }
 
         .note { margin-top: 14px; font-size: 12px; color: var(--text-3); text-align: center; }
+
+        /* ---- HTTPS required banner ---- */
+        .https-required-banner {
+            display: none;
+            padding: 16px;
+            margin-bottom: 16px;
+            background: rgba(239, 68, 68, 0.08);
+            border: 1px solid #f87171;
+            border-radius: 6px;
+            color: #f87171;
+            font-size: 14px;
+        }
+        .https-required-banner strong { display: block; margin-bottom: 4px; color: var(--text-1); }
+        .https-required-banner a {
+            display: inline-block;
+            margin-top: 8px;
+            padding: 6px 12px;
+            background: #f87171;
+            color: #fff;
+            text-decoration: none;
+            border-radius: 4px;
+            font-weight: 600;
+        }
+        .form-disabled { opacity: 0.5; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -292,6 +316,12 @@
         </div>
 
         <div class="card">
+            <div id="httpsRequiredBanner" class="https-required-banner">
+                <strong>HTTPS required</strong>
+                You're connected over plain HTTP. Authentication is disabled because passwords would be transmitted in plaintext.
+                <a id="switchToHttpsBtn" href="#">Switch to HTTPS &rarr;</a>
+            </div>
+
             <div class="step" id="step-1">
                 <h2>Create Admin Account</h2>
                 <p class="desc">This account has full access to all settings.</p>
@@ -341,6 +371,31 @@
             </div>
         </div>
     </div>
+
+    <script>
+        (async function () {
+            if (window.location.protocol !== 'http:') return;
+            const banner = document.getElementById('httpsRequiredBanner');
+            if (!banner) return;
+
+            // Disable any forms on the page so the user can't submit
+            document.querySelectorAll('form').forEach(f => f.classList.add('form-disabled'));
+
+            // Try to find the HTTPS port
+            let httpsPort = '9854';
+            try {
+                const res = await fetch('/api/system/https-info', { credentials: 'include' });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.https_port) httpsPort = data.https_port;
+                }
+            } catch (_) { /* fall back to default */ }
+
+            const url = `https://${window.location.hostname}:${httpsPort}${window.location.pathname}${window.location.search}`;
+            document.getElementById('switchToHttpsBtn').href = url;
+            banner.style.display = 'block';
+        })();
+    </script>
 
     <script>
         let adminUsername = '';

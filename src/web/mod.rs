@@ -353,6 +353,7 @@ pub async fn run_web_server(
         .route("/api/auth/login", post(api_auth_login))
         .route("/api/auth/setup", post(api_auth_setup))
         .route("/api/system/setup-info", get(api_setup_info))
+        .route("/api/system/https-info", get(api_https_info))
         .route("/api/auth/logout", post(api_auth_logout))
         .route("/api/auth/me", get(api_auth_me))
         .route("/api/auth/change-password", post(api_change_password))
@@ -688,6 +689,25 @@ async fn api_setup_info(State(state): State<AppState>) -> Json<serde_json::Value
         "dns_listen": dns_listen,
         "web_listen": web_listen,
         "server_ip": server_ip,
+    }))
+}
+
+/// Pre-auth endpoint that returns the configured HTTPS port (if any).
+/// Used by login.html and setup.html to build the "Switch to HTTPS" URL.
+/// Exposes only the port — no auth required, no sensitive data.
+async fn api_https_info(State(state): State<AppState>) -> Json<serde_json::Value> {
+    let config = Config::load(&state.config_path).unwrap_or_default();
+    let https_port: Option<String> = config
+        .web
+        .https_listen
+        .as_ref()
+        .and_then(|addrs| addrs.first())
+        .and_then(|addr| {
+            let last_colon = addr.rfind(':')?;
+            Some(addr[last_colon + 1..].to_string())
+        });
+    Json(serde_json::json!({
+        "https_port": https_port,
     }))
 }
 

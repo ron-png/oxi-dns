@@ -7,7 +7,13 @@ use axum::{
     response::{IntoResponse, Redirect, Response},
 };
 
-const PUBLIC_ROUTES: &[&str] = &["/login", "/setup", "/api/auth/login", "/api/auth/setup"];
+const PUBLIC_ROUTES: &[&str] = &[
+    "/login",
+    "/setup",
+    "/api/auth/login",
+    "/api/auth/setup",
+    "/api/system/https-info",
+];
 
 pub async fn auth_middleware(
     axum::extract::State(auth): axum::extract::State<AuthService>,
@@ -18,7 +24,11 @@ pub async fn auth_middleware(
 
     // Check if setup is needed — redirect everything to /setup except setup routes
     if auth.needs_setup().await {
-        if path == "/setup" || path == "/api/auth/setup" || path == "/api/system/setup-info" {
+        if path == "/setup"
+            || path == "/api/auth/setup"
+            || path == "/api/system/setup-info"
+            || path == "/api/system/https-info"
+        {
             return next.run(request).await;
         }
         if path.starts_with("/api/") {
