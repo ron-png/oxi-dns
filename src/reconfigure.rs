@@ -462,4 +462,15 @@ mod tests {
         assert!(!is_port53_local("192.168.1.10:53"));
         assert!(!is_port53_local("0.0.0.0:5353"));
     }
+
+    #[test]
+    fn web_https_listen_is_not_cli_reconfigurable() {
+        // web.https_listen must be edited via the web UI, not via --reconfigure.
+        // This guard prevents accidentally adding it to VALID_KEYS and
+        // splitting the "where do you configure HTTPS" story.
+        assert!(
+            !VALID_KEYS.contains(&"web.https_listen"),
+            "web.https_listen must NOT be in the CLI reconfigure allow-list — it is web-editable only"
+        );
+    }
 }
