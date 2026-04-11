@@ -8,6 +8,7 @@ const VALID_KEYS: &[&str] = &[
     "dns.doh_listen",
     "dns.doq_listen",
     "web.listen",
+    "web.https_listen",
 ];
 
 #[derive(Debug, PartialEq)]
@@ -66,7 +67,9 @@ pub fn parse_changes(args: &[String]) -> anyhow::Result<Vec<(String, String)>> {
                 VALID_KEYS.join(", ")
             );
         }
-        if matches!(key, "dns.listen" | "web.listen") && value.trim().is_empty() {
+        if matches!(key, "dns.listen" | "web.listen" | "web.https_listen")
+            && value.trim().is_empty()
+        {
             anyhow::bail!("{} requires a non-empty listen address", key);
         }
         changes.push((key.to_string(), value.to_string()));
@@ -86,6 +89,14 @@ pub fn apply_changes(config: &mut Config, changes: &[(String, String)]) {
     let web_listen = collect_values(changes, "web.listen");
     if !web_listen.is_empty() {
         config.web.listen = web_listen;
+    }
+
+    // web.https_listen is always Some(_) in practice (HTTPS is required
+    // for the dashboard's sensitive flows), but the config field is
+    // Option<Vec<String>> for migration reasons — wrap it.
+    let https_listen = collect_values(changes, "web.https_listen");
+    if !https_listen.is_empty() {
+        config.web.https_listen = Some(https_listen);
     }
 
     if has_key(changes, "dns.dot_listen") {
@@ -464,13 +475,30 @@ mod tests {
     }
 
     #[test]
-    fn web_https_listen_is_not_cli_reconfigurable() {
-        // web.https_listen must be edited via the web UI, not via --reconfigure.
-        // This guard prevents accidentally adding it to VALID_KEYS and
-        // splitting the "where do you configure HTTPS" story.
-        assert!(
-            !VALID_KEYS.contains(&"web.https_listen"),
-            "web.https_listen must NOT be in the CLI reconfigure allow-list — it is web-editable only"
+    fn web_https_listen_is_cli_reconfigurable() {
+        // web.https_listen flows through the same reconfigure pipeline
+        // as dns.listen / web.listen / dns.dot_listen / etc. — the web
+        // UI accumulates pending HTTPS port changes into the reconfig
+        // banner like every other network listener.
+        assert!(VALID_KEYS.contains(&"web.https_listen"));
+    }
+
+    #[test]
+    fn apply_https_listen() {
+        let mut config = Config::default();
+        let changes = vec![
+            ("web.https_listen".to_string(), "0.0.0.0:9854".to_string()),
+            ("web.https_listen".to_string(), "[::]:9854".to_string()),
+        ];
+        apply_changes(&mut config, &changes);
+        assert_eq!(
+            config.web.https_listen,
+            Some(vec!["0.0.0.0:9854".to_string(), "[::]:9854".to_string()])
         );
+    }
+
+    #[test]
+    fn https_listen_empty_value_rejected() {
+        assert!(parse_changes(&["web.https_listen=".to_string()]).is_err());
     }
 }
