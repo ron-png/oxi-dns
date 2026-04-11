@@ -438,6 +438,7 @@ pub async fn run_web_server(
         .route("/api/cache/stats", get(api_cache_stats))
         .route("/api/cache/flush", post(api_cache_flush))
         // Version / update
+        .route("/api/system/security-status", get(api_security_status))
         .route("/api/system/version", get(api_version))
         .route("/api/system/version/check", post(api_version_check))
         .route("/api/system/update", post(api_perform_update))
@@ -1956,6 +1957,23 @@ async fn api_set_auto_update(
     tracing::info!("Auto-update set to {}", req.enabled);
     state.save_config().await;
     Ok(StatusCode::OK)
+}
+
+// ==================== Security Status ====================
+
+async fn api_security_status(
+    axum::Extension(_user): axum::Extension<AuthenticatedUser>,
+    State(state): State<AppState>,
+    request: axum::extract::Request,
+) -> Response {
+    let is_https_request = request.extensions().get::<IsHttps>().is_some();
+    let config = Config::load(&state.config_path).unwrap_or_default();
+    Json(serde_json::json!({
+        "is_https_request": is_https_request,
+        "password_change_recommended": config.web.password_change_recommended,
+        "https_available": config.web.https_listen.is_some(),
+    }))
+    .into_response()
 }
 
 // ==================== IPv6 (AAAA) Toggle ====================
