@@ -1561,6 +1561,35 @@
             opacity: 0.85;
         }
 
+        .sensitive-warning {
+            padding: 24px;
+            border: 1px dashed var(--border, #ccc);
+            border-radius: 6px;
+            text-align: center;
+            color: var(--text-muted, #888);
+            margin: 12px 0;
+        }
+        .sensitive-warning__icon {
+            font-size: 28px;
+            display: block;
+            margin-bottom: 8px;
+        }
+        .sensitive-warning__title {
+            font-weight: 600;
+            color: var(--text, #333);
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+        .sensitive-warning__btn {
+            display: inline-block;
+            margin-top: 12px;
+            padding: 8px 16px;
+            background: var(--accent, #1890ff);
+            color: #fff;
+            text-decoration: none;
+            border-radius: 4px;
+        }
+
         .cert-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 16px; }
         .cert-tab { padding: 8px 16px; cursor: pointer; border: none; background: none; color: var(--text-muted); font-size: 13px; border-bottom: 2px solid transparent; }
         .cert-tab.active { color: var(--text); border-bottom-color: var(--accent); }
@@ -2823,6 +2852,24 @@
 
         function showChangePasswordModal() {
             document.getElementById('userMenuDropdown').classList.remove('open');
+            if (window.location.protocol === 'http:') {
+                const httpsUrl = cachedHttpsUrl;
+                openModal(`
+                    <h3>Change Password</h3>
+                    <div data-requires-https="true" data-replaced="true">
+                        <div class="sensitive-warning">
+                            <span class="sensitive-warning__icon">🔒</span>
+                            <div class="sensitive-warning__title">This feature requires HTTPS</div>
+                            <div>You're connected over plain HTTP. Switch to HTTPS to use this feature.</div>
+                            ${httpsUrl ? `<a class="sensitive-warning__btn" href="${httpsUrl}">Switch to HTTPS →</a>` : ''}
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-sm" onclick="closeModal()">Cancel</button>
+                    </div>
+                `);
+                return;
+            }
             openModal(`
                 <h3>Change Password</h3>
                 <div class="form-group">
@@ -3549,7 +3596,7 @@
                 <button class="btn btn-sm" style="background:var(--danger);color:#fff;" onclick="removeTlsCert()">Remove &amp; use self-signed</button>
             </div>
         </div>
-        <div class="cert-tab-content" id="certTabAcme">
+        <div class="cert-tab-content" id="certTabAcme" data-requires-https="true">
             <div class="form-group">
                 <label>Domain</label>
                 <input type="text" id="acmeDomain" placeholder="example.com" />
@@ -3591,7 +3638,7 @@
                 <button class="btn btn-accent" onclick="startAcmeIssuance()">Issue Certificate</button>
             </div>
         </div>
-        <div class="cert-tab-content" id="certTabUpload">
+        <div class="cert-tab-content" id="certTabUpload" data-requires-https="true">
             <div class="cert-tabs" style="margin-bottom:12px;">
                 <button class="cert-tab active" onclick="switchUploadTab('pem', this)">PEM</button>
                 <button class="cert-tab" onclick="switchUploadTab('p12', this)">PKCS12</button>
@@ -5175,6 +5222,27 @@
         }
 
         // ---- HTTP warning banner ----
+        let cachedHttpsUrl = null;
+
+        function applySensitiveFormGuards(httpsUrl) {
+            if (window.location.protocol !== 'http:') return;
+            const warningHtml = `
+                <div class="sensitive-warning">
+                    <span class="sensitive-warning__icon">🔒</span>
+                    <div class="sensitive-warning__title">This feature requires HTTPS</div>
+                    <div>You're connected over plain HTTP. Switch to HTTPS to use this feature.</div>
+                    ${httpsUrl ? `<a class="sensitive-warning__btn" href="${httpsUrl}">Switch to HTTPS →</a>` : ''}
+                </div>
+            `;
+            document.querySelectorAll('[data-requires-https="true"]').forEach((el) => {
+                // Only replace if not already replaced (avoid double-replacement on re-init)
+                if (!el.dataset.replaced) {
+                    el.innerHTML = warningHtml;
+                    el.dataset.replaced = 'true';
+                }
+            });
+        }
+
         (function setupHttpBanner() {
             const banner = document.getElementById('httpWarningBanner');
             if (!banner) return;
@@ -5191,6 +5259,7 @@
                     const httpsAddrs = data.https_listen || [];
                     if (httpsAddrs.length === 0) {
                         btn.style.display = 'none';
+                        applySensitiveFormGuards(null);
                         return;
                     }
                     // Handle "0.0.0.0:9854" or "[::]:9854" or bare "9854"
@@ -5202,8 +5271,13 @@
                     }
                     const url = `https://${window.location.hostname}:${port}${window.location.pathname}${window.location.search}`;
                     btn.href = url;
+                    cachedHttpsUrl = url;
+                    applySensitiveFormGuards(url);
                 })
-                .catch(() => { btn.style.display = 'none'; });
+                .catch(() => {
+                    btn.style.display = 'none';
+                    applySensitiveFormGuards(null);
+                });
         })();
 
         // ---- Password rotation banner ----
