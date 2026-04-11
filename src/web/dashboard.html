@@ -2715,21 +2715,35 @@
                 const tbody = document.getElementById('usersBody');
                 tbody.innerHTML = users.map(u => {
                     const isSelf = currentUser && u.id === currentUser.id;
+                    const isRoot = !!u.is_root;
                     const perms = (u.permissions || []).map(p => `<span class="perm-badge">${escapeHtml(p)}</span>`).join('');
                     const created = u.created_at ? new Date(u.created_at).toLocaleDateString() : '-';
                     const statusBadge = u.is_active
                         ? '<span class="badge allowed">Active</span>'
                         : '<span class="badge blocked">Inactive</span>';
+                    const rootBadge = isRoot ? '<span class="badge allowed" title="Root account — cannot be deleted or have permissions removed" style="margin-left:6px;">Root</span>' : '';
+                    // Root users are immutable: no edit, no delete, no
+                    // password reset from the admin panel. The root owner
+                    // must change their own password via "Change Password".
+                    const editBtn = isRoot
+                        ? '<button class="btn btn-sm" disabled title="Root user cannot be edited">Edit</button>'
+                        : `<button class="btn btn-sm" onclick="showEditUserModal(${u.id})">Edit</button>`;
+                    const pwBtn = isRoot
+                        ? '<button class="btn btn-sm" disabled title="Root password can only be changed by the root user">Password</button>'
+                        : `<button class="btn btn-sm" onclick="showResetPasswordModal(${u.id}, '${escapeHtml(u.username)}')">Password</button>`;
+                    const delBtn = (isSelf || isRoot)
+                        ? ''
+                        : `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">Delete</button>`;
                     return `<tr>
-                        <td>${escapeHtml(u.username)}</td>
+                        <td>${escapeHtml(u.username)}${rootBadge}</td>
                         <td>${statusBadge}</td>
                         <td><div class="perm-badges">${perms}</div></td>
                         <td>${created}</td>
                         <td>
                             <div class="user-actions">
-                                <button class="btn btn-sm" onclick="showEditUserModal(${u.id})">Edit</button>
-                                <button class="btn btn-sm" onclick="showResetPasswordModal(${u.id}, '${escapeHtml(u.username)}')">Password</button>
-                                ${isSelf ? '' : `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">Delete</button>`}
+                                ${editBtn}
+                                ${pwBtn}
+                                ${delBtn}
                             </div>
                         </td>
                     </tr>`;

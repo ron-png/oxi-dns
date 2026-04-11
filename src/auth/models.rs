@@ -64,6 +64,11 @@ pub struct User {
     pub is_active: bool,
     pub created_at: String,
     pub updated_at: String,
+    /// Set on the first account created during initial setup. The root
+    /// user always has full permissions and cannot be deleted, deactivated,
+    /// or have their permissions reduced — there must always be at least
+    /// one account that can recover the system.
+    pub is_root: bool,
 }
 
 #[derive(Debug, Clone)]

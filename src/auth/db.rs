@@ -30,7 +30,8 @@ impl AuthDb {
                      password_hash TEXT NOT NULL,
                      is_active     INTEGER DEFAULT 1,
                      created_at    TEXT,
-                     updated_at    TEXT
+                     updated_at    TEXT,
+                     is_root       INTEGER NOT NULL DEFAULT 0
                  );
 
                  CREATE TABLE IF NOT EXISTS user_permissions (
@@ -63,6 +64,33 @@ impl AuthDb {
 
                  CREATE INDEX IF NOT EXISTS idx_api_tokens_user_id ON api_tokens(user_id);",
             )?;
+
+            // Migration: add is_root column to pre-existing deployments.
+            // `ALTER TABLE ADD COLUMN` fails with "duplicate column name" when
+            // the column already exists — that's the steady-state case, so
+            // swallow that specific error.
+            if let Err(e) = conn.execute(
+                "ALTER TABLE users ADD COLUMN is_root INTEGER NOT NULL DEFAULT 0",
+                [],
+            ) {
+                let msg = e.to_string();
+                if !msg.contains("duplicate column name") {
+                    return Err(tokio_rusqlite::Error::Rusqlite(e));
+                }
+            }
+
+            // Backfill: on databases that existed before is_root was
+            // introduced, promote the oldest account to root so there is
+            // always exactly one recovery account. No-op if a root user
+            // already exists or the table is empty (fresh install).
+            conn.execute(
+                "UPDATE users
+                    SET is_root = 1
+                  WHERE id = (SELECT MIN(id) FROM users)
+                    AND NOT EXISTS (SELECT 1 FROM users WHERE is_root = 1)",
+                [],
+            )?;
+
             Ok(())
         })
         .await?;
@@ -109,8 +137,8 @@ impl AuthDb {
 
                 let now = Utc::now().to_rfc3339();
                 conn.execute(
-                    "INSERT INTO users (username, password_hash, is_active, created_at, updated_at)
-                     VALUES (?1, ?2, 1, ?3, ?4)",
+                    "INSERT INTO users (username, password_hash, is_active, created_at, updated_at, is_root)
+                     VALUES (?1, ?2, 1, ?3, ?4, 1)",
                     params![username, password_hash, now, now],
                 )?;
                 let id = conn.last_insert_rowid();
@@ -123,7 +151,7 @@ impl AuthDb {
                 }
 
                 let user = conn.query_row(
-                    "SELECT id, username, is_active, created_at, updated_at
+                    "SELECT id, username, is_active, created_at, updated_at, is_root
                      FROM users WHERE id = ?1",
                     params![id],
                     row_to_user,
@@ -160,7 +188,7 @@ impl AuthDb {
                 }
 
                 let user = conn.query_row(
-                    "SELECT id, username, is_active, created_at, updated_at
+                    "SELECT id, username, is_active, created_at, updated_at, is_root
                      FROM users WHERE id = ?1",
                     params![id],
                     row_to_user,
@@ -180,7 +208,7 @@ impl AuthDb {
         let result = conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at, password_hash
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_hash
                      FROM users WHERE username = ?1",
                 )?;
                 let mut rows = stmt.query(params![username])?;
@@ -201,7 +229,7 @@ impl AuthDb {
         let result = conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at
+                    "SELECT id, username, is_active, created_at, updated_at, is_root
                      FROM users WHERE id = ?1",
                 )?;
                 let mut rows = stmt.query(params![user_id])?;
@@ -242,7 +270,7 @@ impl AuthDb {
         let users = conn
             .call(|conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at
+                    "SELECT id, username, is_active, created_at, updated_at, is_root
                      FROM users ORDER BY id",
                 )?;
                 let rows = stmt.query_map([], row_to_user)?;
@@ -296,7 +324,7 @@ impl AuthDb {
         let result = conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at, password_hash
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_hash
                      FROM users WHERE id = ?1",
                 )?;
                 let mut rows = stmt.query(params![user_id])?;
@@ -591,25 +619,29 @@ impl AuthDb {
 
 fn row_to_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
     let is_active: i64 = row.get(2)?;
+    let is_root: i64 = row.get(5).unwrap_or(0);
     Ok(User {
         id: row.get(0)?,
         username: row.get(1)?,
         is_active: is_active != 0,
         created_at: row.get(3).unwrap_or_default(),
         updated_at: row.get(4).unwrap_or_default(),
+        is_root: is_root != 0,
     })
 }
 
 fn row_to_user_with_hash(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserWithHash> {
     let is_active: i64 = row.get(2)?;
+    let is_root: i64 = row.get(5).unwrap_or(0);
     let user = User {
         id: row.get(0)?,
         username: row.get(1)?,
         is_active: is_active != 0,
         created_at: row.get(3).unwrap_or_default(),
         updated_at: row.get(4).unwrap_or_default(),
+        is_root: is_root != 0,
     };
-    let password_hash: String = row.get(5)?;
+    let password_hash: String = row.get(6)?;
     Ok(UserWithHash {
         user,
         password_hash,

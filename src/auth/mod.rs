@@ -177,6 +177,18 @@ impl AuthService {
             .ok_or_else(|| anyhow::anyhow!("User not found"))?;
         let current_permissions = self.db.get_user_permissions(user_id).await?;
 
+        // The root user is immutable: no permission changes, no
+        // deactivation. This guarantees the system always has one account
+        // that can recover access.
+        if current_user.is_root {
+            if matches!(is_active, Some(false)) {
+                anyhow::bail!("Cannot deactivate the root user");
+            }
+            if permissions.is_some() {
+                anyhow::bail!("Cannot modify the root user's permissions");
+            }
+        }
+
         self.db
             .update_user(
                 user_id,
@@ -189,6 +201,14 @@ impl AuthService {
     }
 
     pub async fn delete_user(&self, user_id: i64) -> anyhow::Result<()> {
+        let target = self
+            .db
+            .get_user_by_id(user_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("User not found"))?;
+        if target.is_root {
+            anyhow::bail!("Cannot delete the root user");
+        }
         self.db.delete_user(user_id).await
     }
 
