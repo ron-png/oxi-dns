@@ -2304,7 +2304,7 @@
                             <p>When enabled, all plain HTTP requests are redirected to HTTPS. Requires HTTPS to be configured.</p>
                         </div>
                         <label class="toggle-switch">
-                            <input type="checkbox" id="toggle-auto-redirect-https">
+                            <input type="checkbox" id="toggle-auto-redirect-https" onchange="toggleAutoRedirectHttps(this.checked)">
                             <span class="toggle-slider"></span>
                         </label>
                     </div>
@@ -3907,6 +3907,14 @@
                 }
             }
 
+            // Sync the auto-redirect toggle from the server state
+            const autoRedirectToggle = document.getElementById('toggle-auto-redirect-https');
+            if (autoRedirectToggle) {
+                autoRedirectToggle.checked = !!serverNetworkState.auto_redirect_https;
+                const httpsListen = serverNetworkState.https_listen;
+                autoRedirectToggle.disabled = !httpsListen || (Array.isArray(httpsListen) && httpsListen.length === 0);
+            }
+
             networkInputsInitialized = true;
             renderNetworkTargets();
         }
@@ -4226,7 +4234,40 @@
                 }
             }
 
+            if (proto === 'https' && !enabled) {
+                const redirectToggle = document.getElementById('toggle-auto-redirect-https');
+                if (redirectToggle) {
+                    redirectToggle.checked = false;
+                    redirectToggle.disabled = true;
+                }
+            } else if (proto === 'https' && enabled) {
+                const redirectToggle = document.getElementById('toggle-auto-redirect-https');
+                if (redirectToggle) {
+                    redirectToggle.disabled = false;
+                }
+            }
+
             checkNetworkChanges();
+        }
+
+        async function toggleAutoRedirectHttps(enabled) {
+            const toggle = document.getElementById('toggle-auto-redirect-https');
+            if (toggle) toggle.disabled = true;
+            try {
+                const res = await fetch('/api/system/network', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ auto_redirect_https: enabled })
+                });
+                if (!res.ok) throw new Error('Failed to update auto_redirect_https');
+                const data = await res.json();
+                serverNetworkState.auto_redirect_https = data.auto_redirect_https ?? enabled;
+            } catch (e) {
+                console.error(e);
+                if (toggle) toggle.checked = !enabled;
+            } finally {
+                if (toggle) toggle.disabled = false;
+            }
         }
 
         function getNetworkValidationError() {
