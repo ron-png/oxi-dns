@@ -1349,7 +1349,26 @@ async fn api_change_password(
     }
 
     match state.auth.reset_password(user.id, &req.new_password).await {
-        Ok(()) => Ok(StatusCode::OK),
+        Ok(()) => {
+            // Clear the password-rotation flag if set. Best-effort: swallow
+            // save errors since the password change itself succeeded.
+            if let Ok(mut config) = Config::load(&state.config_path) {
+                if config.web.password_change_recommended {
+                    config.web.password_change_recommended = false;
+                    if let Err(e) = config.save(&state.config_path) {
+                        tracing::warn!(
+                            "Failed to clear password_change_recommended: {}",
+                            e
+                        );
+                    } else {
+                        tracing::info!(
+                            "Password changed — cleared password_change_recommended"
+                        );
+                    }
+                }
+            }
+            Ok(StatusCode::OK)
+        }
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(AuthErrorResponse {
