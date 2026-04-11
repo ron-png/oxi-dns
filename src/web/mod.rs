@@ -704,6 +704,8 @@ async fn api_system_network(
     Json(serde_json::json!({
         "dns_listen": config.dns.listen,
         "web_listen": config.web.listen,
+        "https_listen": config.web.https_listen,
+        "auto_redirect_https": config.web.auto_redirect_https,
         "dot_listen": config.dns.dot_listen,
         "doh_listen": config.dns.doh_listen,
         "doq_listen": config.dns.doq_listen,
@@ -723,6 +725,8 @@ struct NetworkInterfaceInfo {
 struct UpdateNetworkRequest {
     dns_listen: Option<serde_json::Value>,
     web_listen: Option<serde_json::Value>,
+    https_listen: Option<serde_json::Value>,
+    auto_redirect_https: Option<bool>,
     dot_listen: Option<serde_json::Value>,
     doh_listen: Option<serde_json::Value>,
     doq_listen: Option<serde_json::Value>,
@@ -795,6 +799,51 @@ async fn api_update_network(
             .into_response();
     }
 
+    // Track auto-redirect transition for password-change recommendation
+    let previous_auto_redirect = config.web.auto_redirect_https;
+
+    if let Some(ref val) = req.https_listen {
+        config.web.https_listen = match parse_optional_listen_value(val) {
+            Ok(listen) => listen,
+            Err(error) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(serde_json::json!({ "error": error })),
+                )
+                    .into_response();
+            }
+        };
+        // If HTTPS is cleared while auto-redirect is on, force the toggle off
+        // to avoid sending clients to a non-existent listener.
+        if config.web.https_listen.is_none() && config.web.auto_redirect_https {
+            config.web.auto_redirect_https = false;
+            tracing::info!(
+                "web.https_listen cleared — auto_redirect_https automatically disabled"
+            );
+        }
+    }
+
+    if let Some(enabled) = req.auto_redirect_https {
+        if enabled && config.web.https_listen.is_none() {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({
+                    "error": "HTTPS must be configured (https_listen) before enabling auto-redirect"
+                })),
+            )
+                .into_response();
+        }
+        config.web.auto_redirect_https = enabled;
+    }
+
+    // If auto-redirect transitioned false -> true, set the password-rotation flag.
+    if !previous_auto_redirect && config.web.auto_redirect_https {
+        config.web.password_change_recommended = true;
+        tracing::info!(
+            "auto_redirect_https enabled — setting password_change_recommended=true"
+        );
+    }
+
     if let Some(ref val) = req.dot_listen {
         config.dns.dot_listen = match parse_optional_listen_value(val) {
             Ok(listen) => listen,
@@ -847,6 +896,8 @@ async fn api_update_network(
     Json(serde_json::json!({
         "dns_listen": config.dns.listen,
         "web_listen": config.web.listen,
+        "https_listen": config.web.https_listen,
+        "auto_redirect_https": config.web.auto_redirect_https,
         "dot_listen": config.dns.dot_listen,
         "doh_listen": config.dns.doh_listen,
         "doq_listen": config.dns.doq_listen,
