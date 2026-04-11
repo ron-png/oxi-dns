@@ -2903,3 +2903,61 @@ async fn api_stats_summary(
             .into_response(),
     }
 }
+
+#[cfg(test)]
+mod sensitive_https_middleware_tests {
+    use super::*;
+    use axum::body::Body;
+    use axum::http::{Request, StatusCode};
+    use tower::ServiceExt;
+
+    fn build_test_router() -> Router {
+        Router::new()
+            .route(
+                "/api/system/tls/upload",
+                post(|| async { StatusCode::OK }),
+            )
+            .layer(axum::middleware::from_fn(sensitive_https_middleware))
+    }
+
+    #[tokio::test]
+    async fn blocks_http_request_to_sensitive_path() {
+        let app = build_test_router();
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/system/tls/upload")
+            .body(Body::empty())
+            .unwrap();
+        // Note: no IsHttps extension => treated as HTTP
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+    }
+
+    #[tokio::test]
+    async fn allows_https_request_to_sensitive_path() {
+        let app = build_test_router();
+        let mut req = Request::builder()
+            .method("POST")
+            .uri("/api/system/tls/upload")
+            .body(Body::empty())
+            .unwrap();
+        req.extensions_mut().insert(IsHttps);
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn allows_http_to_non_sensitive_path() {
+        // A path not in SENSITIVE_PATHS should pass through over HTTP
+        let app = Router::new()
+            .route("/api/stats", get(|| async { StatusCode::OK }))
+            .layer(axum::middleware::from_fn(sensitive_https_middleware));
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/stats")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+}
