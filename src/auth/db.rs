@@ -31,7 +31,8 @@ impl AuthDb {
                      is_active     INTEGER DEFAULT 1,
                      created_at    TEXT,
                      updated_at    TEXT,
-                     is_root       INTEGER NOT NULL DEFAULT 0
+                     is_root       INTEGER NOT NULL DEFAULT 0,
+                     password_change_recommended INTEGER NOT NULL DEFAULT 0
                  );
 
                  CREATE TABLE IF NOT EXISTS user_permissions (
@@ -71,6 +72,17 @@ impl AuthDb {
             // swallow that specific error.
             if let Err(e) = conn.execute(
                 "ALTER TABLE users ADD COLUMN is_root INTEGER NOT NULL DEFAULT 0",
+                [],
+            ) {
+                let msg = e.to_string();
+                if !msg.contains("duplicate column name") {
+                    return Err(tokio_rusqlite::Error::Rusqlite(e));
+                }
+            }
+
+            // Migration: add per-user password_change_recommended column.
+            if let Err(e) = conn.execute(
+                "ALTER TABLE users ADD COLUMN password_change_recommended INTEGER NOT NULL DEFAULT 0",
                 [],
             ) {
                 let msg = e.to_string();
@@ -151,7 +163,7 @@ impl AuthDb {
                 }
 
                 let user = conn.query_row(
-                    "SELECT id, username, is_active, created_at, updated_at, is_root
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_change_recommended
                      FROM users WHERE id = ?1",
                     params![id],
                     row_to_user,
@@ -188,7 +200,7 @@ impl AuthDb {
                 }
 
                 let user = conn.query_row(
-                    "SELECT id, username, is_active, created_at, updated_at, is_root
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_change_recommended
                      FROM users WHERE id = ?1",
                     params![id],
                     row_to_user,
@@ -208,7 +220,7 @@ impl AuthDb {
         let result = conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_hash
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_change_recommended, password_hash
                      FROM users WHERE username = ?1",
                 )?;
                 let mut rows = stmt.query(params![username])?;
@@ -229,7 +241,7 @@ impl AuthDb {
         let result = conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at, is_root
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_change_recommended
                      FROM users WHERE id = ?1",
                 )?;
                 let mut rows = stmt.query(params![user_id])?;
@@ -270,7 +282,7 @@ impl AuthDb {
         let users = conn
             .call(|conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at, is_root
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_change_recommended
                      FROM users ORDER BY id",
                 )?;
                 let rows = stmt.query_map([], row_to_user)?;
@@ -324,7 +336,7 @@ impl AuthDb {
         let result = conn
             .call(move |conn| {
                 let mut stmt = conn.prepare(
-                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_hash
+                    "SELECT id, username, is_active, created_at, updated_at, is_root, password_change_recommended, password_hash
                      FROM users WHERE id = ?1",
                 )?;
                 let mut rows = stmt.query(params![user_id])?;
@@ -349,15 +361,35 @@ impl AuthDb {
         Ok(())
     }
 
-    /// Update the stored password hash for a user.
+    /// Update the stored password hash for a user. Also clears the
+    /// `password_change_recommended` flag — once the user has rotated
+    /// their password there is nothing left to nag them about.
     pub async fn update_password(&self, user_id: i64, password_hash: String) -> anyhow::Result<()> {
         let conn = self.conn.clone();
         conn.call(move |conn| {
             let now = Utc::now().to_rfc3339();
             conn.execute(
-                "UPDATE users SET password_hash = ?1, updated_at = ?2 WHERE id = ?3",
+                "UPDATE users
+                    SET password_hash = ?1,
+                        updated_at = ?2,
+                        password_change_recommended = 0
+                  WHERE id = ?3",
                 params![password_hash, now, user_id],
             )?;
+            Ok(())
+        })
+        .await?;
+        Ok(())
+    }
+
+    /// Mark every existing account as "should rotate their password".
+    /// Called once when the `auto_redirect_https` toggle transitions from
+    /// off to on: any passwords that were set before that moment may have
+    /// been transmitted in plain text.
+    pub async fn mark_all_password_change_recommended(&self) -> anyhow::Result<()> {
+        let conn = self.conn.clone();
+        conn.call(move |conn| {
+            conn.execute("UPDATE users SET password_change_recommended = 1", [])?;
             Ok(())
         })
         .await?;
@@ -620,6 +652,7 @@ impl AuthDb {
 fn row_to_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
     let is_active: i64 = row.get(2)?;
     let is_root: i64 = row.get(5).unwrap_or(0);
+    let pwd_recommend: i64 = row.get(6).unwrap_or(0);
     Ok(User {
         id: row.get(0)?,
         username: row.get(1)?,
@@ -627,12 +660,14 @@ fn row_to_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
         created_at: row.get(3).unwrap_or_default(),
         updated_at: row.get(4).unwrap_or_default(),
         is_root: is_root != 0,
+        password_change_recommended: pwd_recommend != 0,
     })
 }
 
 fn row_to_user_with_hash(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserWithHash> {
     let is_active: i64 = row.get(2)?;
     let is_root: i64 = row.get(5).unwrap_or(0);
+    let pwd_recommend: i64 = row.get(6).unwrap_or(0);
     let user = User {
         id: row.get(0)?,
         username: row.get(1)?,
@@ -640,8 +675,9 @@ fn row_to_user_with_hash(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserWithHa
         created_at: row.get(3).unwrap_or_default(),
         updated_at: row.get(4).unwrap_or_default(),
         is_root: is_root != 0,
+        password_change_recommended: pwd_recommend != 0,
     };
-    let password_hash: String = row.get(6)?;
+    let password_hash: String = row.get(7)?;
     Ok(UserWithHash {
         user,
         password_hash,

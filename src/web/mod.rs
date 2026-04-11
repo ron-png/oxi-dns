@@ -929,9 +929,11 @@ async fn api_update_network(
         config.web.auto_redirect_https = enabled;
     }
 
-    // If auto-redirect transitioned false -> true, set the password-rotation flag.
+    // If auto-redirect transitioned false -> true, flag every existing
+    // user for password rotation. Each user clears their own flag by
+    // changing their password — it's tracked per-user in the auth DB,
+    // not as a single global setting.
     if !previous_auto_redirect && config.web.auto_redirect_https {
-        config.web.password_change_recommended = true;
         password_flag_set = true;
     }
 
@@ -996,7 +998,11 @@ async fn api_update_network(
         tracing::info!("web.https_listen cleared — auto_redirect_https automatically disabled");
     }
     if password_flag_set {
-        tracing::info!("auto_redirect_https enabled — setting password_change_recommended=true");
+        if let Err(e) = state.auth.mark_all_password_change_recommended().await {
+            tracing::warn!("Failed to set per-user password rotation flag: {}", e);
+        } else {
+            tracing::info!("auto_redirect_https enabled — flagged all users for password rotation");
+        }
     }
 
     let _ = state.restart_signal.send(true);
@@ -1456,21 +1462,9 @@ async fn api_change_password(
         .change_password_self(user.id, &req.new_password)
         .await
     {
-        Ok(()) => {
-            // Clear the password-rotation flag if set. Best-effort: swallow
-            // save errors since the password change itself succeeded.
-            if let Ok(mut config) = Config::load(&state.config_path) {
-                if config.web.password_change_recommended {
-                    config.web.password_change_recommended = false;
-                    if let Err(e) = config.save(&state.config_path) {
-                        tracing::warn!("Failed to clear password_change_recommended: {}", e);
-                    } else {
-                        tracing::info!("Password changed — cleared password_change_recommended");
-                    }
-                }
-            }
-            Ok(StatusCode::OK)
-        }
+        // The per-user password_change_recommended flag is cleared
+        // inside the DB as part of the UPDATE — no extra work here.
+        Ok(()) => Ok(StatusCode::OK),
         Err(e) => Err((
             StatusCode::BAD_REQUEST,
             Json(AuthErrorResponse {
@@ -2063,15 +2057,19 @@ async fn api_set_auto_update(
 // ==================== Security Status ====================
 
 async fn api_security_status(
-    axum::Extension(_user): axum::Extension<AuthenticatedUser>,
+    axum::Extension(user): axum::Extension<AuthenticatedUser>,
     State(state): State<AppState>,
     request: axum::extract::Request,
 ) -> Response {
     let is_https_request = request.extensions().get::<IsHttps>().is_some();
     let config = Config::load(&state.config_path).unwrap_or_default();
+    // The password-rotation nag lives on the user row now, so two
+    // different users on the same browser can independently dismiss
+    // (or satisfy) it without affecting each other.
+    let password_change_recommended = state.auth.get_password_change_recommended(user.id).await;
     Json(serde_json::json!({
         "is_https_request": is_https_request,
-        "password_change_recommended": config.web.password_change_recommended,
+        "password_change_recommended": password_change_recommended,
         "https_available": config.web.https_listen.is_some(),
     }))
     .into_response()

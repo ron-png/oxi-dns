@@ -83,10 +83,6 @@ pub struct WebConfig {
     /// Force HTTP requests to redirect to HTTPS. Off by default.
     #[serde(default)]
     pub auto_redirect_https: bool,
-    /// Set when auto_redirect_https is first enabled; cleared on successful
-    /// password change. Drives the dashboard password-rotation banner.
-    #[serde(default)]
-    pub password_change_recommended: bool,
     /// Trust the X-Forwarded-Proto header from a reverse proxy to determine
     /// whether a request should be treated as HTTPS. ONLY enable if oxi-dns
     /// is ONLY reachable through a trusted TLS-terminating proxy — otherwise
@@ -300,7 +296,6 @@ fn default_web() -> WebConfig {
         listen: default_web_listen(),
         https_listen: None,
         auto_redirect_https: false,
-        password_change_recommended: false,
         trust_forwarded_proto: false,
     }
 }
@@ -442,10 +437,6 @@ https_listen = ["0.0.0.0:9854"]
             !cfg.auto_redirect_https,
             "auto_redirect_https defaults to false"
         );
-        assert!(
-            !cfg.password_change_recommended,
-            "password_change_recommended defaults to false"
-        );
     }
 
     #[test]
@@ -454,16 +445,13 @@ https_listen = ["0.0.0.0:9854"]
 listen = ["0.0.0.0:9853"]
 https_listen = ["0.0.0.0:9854"]
 auto_redirect_https = true
-password_change_recommended = true
 "#;
         let cfg: WebConfig = toml::from_str(toml_str).expect("parse");
         assert!(cfg.auto_redirect_https);
-        assert!(cfg.password_change_recommended);
 
         let serialized = toml::to_string(&cfg).expect("serialize");
         let reparsed: WebConfig = toml::from_str(&serialized).expect("reparse");
         assert!(reparsed.auto_redirect_https);
-        assert!(reparsed.password_change_recommended);
     }
 
     #[test]
@@ -474,7 +462,6 @@ listen = ["0.0.0.0:9853"]
 "#;
         let cfg: WebConfig = toml::from_str(toml_str).expect("parse");
         assert!(!cfg.auto_redirect_https);
-        assert!(!cfg.password_change_recommended);
         assert!(cfg.https_listen.is_none());
     }
 

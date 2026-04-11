@@ -104,6 +104,7 @@ impl AuthService {
             id: user.id,
             username: user.username,
             permissions,
+            is_root: user.is_root,
         })
     }
 
@@ -115,6 +116,7 @@ impl AuthService {
             id: user.id,
             username: user.username,
             permissions: scoped_permissions,
+            is_root: user.is_root,
         })
     }
 
@@ -256,9 +258,31 @@ impl AuthService {
         }
         let hash = password::hash_password(new_password)
             .map_err(|e| anyhow::anyhow!("Failed to hash password: {}", e))?;
+        // update_password clears password_change_recommended as part of
+        // the same UPDATE — that's what drives the per-user rotation
+        // banner, so cleared on any successful password update.
         self.db.update_password(user_id, hash).await?;
         self.db.delete_sessions_for_user(user_id).await?;
         Ok(())
+    }
+
+    /// Flag every existing user as "password rotation recommended". Called
+    /// when `auto_redirect_https` transitions from off to on: passwords
+    /// were potentially transmitted in plain text up to that moment, so
+    /// each account is individually nagged until they rotate.
+    pub async fn mark_all_password_change_recommended(&self) -> anyhow::Result<()> {
+        self.db.mark_all_password_change_recommended().await
+    }
+
+    /// Read the current user's `password_change_recommended` flag.
+    pub async fn get_password_change_recommended(&self, user_id: i64) -> bool {
+        self.db
+            .get_user_by_id(user_id)
+            .await
+            .ok()
+            .flatten()
+            .map(|u| u.password_change_recommended)
+            .unwrap_or(false)
     }
 }
 

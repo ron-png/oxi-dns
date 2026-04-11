@@ -69,6 +69,11 @@ pub struct User {
     /// or have their permissions reduced — there must always be at least
     /// one account that can recover the system.
     pub is_root: bool,
+    /// Set when HTTPS enforcement is turned on while the user has an
+    /// existing password that may have been transmitted in plain text.
+    /// Cleared when the user's password is updated. Drives the dashboard
+    /// password-rotation banner for this specific user.
+    pub password_change_recommended: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -82,6 +87,7 @@ pub struct AuthenticatedUser {
     pub id: i64,
     pub username: String,
     pub permissions: Vec<Permission>,
+    pub is_root: bool,
 }
 
 impl AuthenticatedUser {

@@ -2798,15 +2798,22 @@
                         ? '<span class="badge allowed">Active</span>'
                         : '<span class="badge blocked">Inactive</span>';
                     const rootBadge = isRoot ? '<span class="badge allowed" title="Root account — cannot be deleted or have permissions removed" style="margin-left:6px;">Root</span>' : '';
-                    // Root users are immutable: no edit, no delete, no
-                    // password reset from the admin panel. The root owner
-                    // must change their own password via "Change Password".
+                    // Root is immutable: no edit, no delete, and no admin
+                    // password reset. Root rotates its own password through
+                    // the self-service Change Password flow (requires the
+                    // current password) — so when root is looking at its
+                    // own row, wire the Password button to that flow.
                     const editBtn = isRoot
                         ? '<button class="btn btn-sm" disabled title="Root user cannot be edited">Edit</button>'
                         : `<button class="btn btn-sm" onclick="showEditUserModal(${u.id})">Edit</button>`;
-                    const pwBtn = isRoot
-                        ? '<button class="btn btn-sm" disabled title="Root password can only be changed by the root user">Password</button>'
-                        : `<button class="btn btn-sm" onclick="showResetPasswordModal(${u.id}, '${escapeHtml(u.username)}')">Password</button>`;
+                    let pwBtn;
+                    if (isRoot && isSelf) {
+                        pwBtn = '<button class="btn btn-sm" onclick="showChangePasswordModal()" title="Change your own password">Password</button>';
+                    } else if (isRoot) {
+                        pwBtn = '<button class="btn btn-sm" disabled title="Root user must change their password themselves">Password</button>';
+                    } else {
+                        pwBtn = `<button class="btn btn-sm" onclick="showResetPasswordModal(${u.id}, '${escapeHtml(u.username)}')">Password</button>`;
+                    }
                     const delBtn = (isSelf || isRoot)
                         ? ''
                         : `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id}, '${escapeHtml(u.username)}')">Delete</button>`;
@@ -5557,11 +5564,18 @@
         })();
 
         // ---- Password rotation banner ----
-        // "Not now" snoozes the banner for the current browser session.
-        // The backend's password_change_recommended flag is only cleared
-        // when the user actually changes their password — next reload /
-        // new tab / new login will surface the reminder again.
-        const PASSWORD_ROTATION_DISMISS_KEY = 'oxidns.passwordRotationDismissed';
+        // Per-user flag: the backend stores password_change_recommended
+        // on each user row, and /api/system/security-status returns the
+        // value for the currently authenticated user. "Not now" snoozes
+        // the banner in this browser session for *this user only* — the
+        // dismiss key is scoped by currentUser.id, so two admins sharing
+        // a machine can dismiss (or not) independently. On next login,
+        // new tab or reload the reminder comes back until the user
+        // actually rotates their password.
+        function passwordRotationDismissKey() {
+            const id = (currentUser && currentUser.id) ?? 'anon';
+            return 'oxidns.passwordRotationDismissed.' + id;
+        }
 
         async function refreshSecurityStatus() {
             try {
@@ -5570,7 +5584,7 @@
                 const status = await res.json();
                 const banner = document.getElementById('passwordRotationBanner');
                 if (!banner) return;
-                const dismissed = sessionStorage.getItem(PASSWORD_ROTATION_DISMISS_KEY) === '1';
+                const dismissed = sessionStorage.getItem(passwordRotationDismissKey()) === '1';
                 // Only show on HTTPS — on HTTP, the HTTP banner takes precedence
                 // and the user can't actually change their password anyway
                 if (
@@ -5587,30 +5601,56 @@
             }
         }
 
+        // Open whatever modal the Users-list row for the current user
+        // would open. Keeping both entry points on the same code path
+        // means users only ever see one "change your password" form,
+        // instead of two that behave differently.
+        function openPasswordChangeForCurrentUser() {
+            if (!currentUser) {
+                showChangePasswordModal();
+                return;
+            }
+            // Root must always go through the self-service flow — the
+            // admin reset endpoint rejects root on the backend.
+            if (currentUser.is_root) {
+                showChangePasswordModal();
+                return;
+            }
+            // Other users with ManageUsers get the same one-field
+            // "Reset Password" prompt that their row in Users uses.
+            if (hasPerm('manage_users')) {
+                showResetPasswordModal(currentUser.id, currentUser.username);
+                return;
+            }
+            // Users without ManageUsers have no Users-list row of their
+            // own; fall back to the self-service change-password form.
+            showChangePasswordModal();
+        }
+
         (function setupPasswordRotationBanner() {
             const btn = document.getElementById('passwordRotationBtn');
             if (btn) {
                 btn.addEventListener('click', (e) => {
                     e.preventDefault();
-                    showChangePasswordModal();
+                    openPasswordChangeForCurrentUser();
                 });
             }
             const dismissBtn = document.getElementById('passwordRotationDismissBtn');
             if (dismissBtn) {
                 dismissBtn.addEventListener('click', () => {
-                    sessionStorage.setItem(PASSWORD_ROTATION_DISMISS_KEY, '1');
+                    sessionStorage.setItem(passwordRotationDismissKey(), '1');
                     const banner = document.getElementById('passwordRotationBanner');
                     if (banner) banner.style.display = 'none';
                 });
             }
         })();
 
-        // Call on init
-        refreshSecurityStatus();
-
         // ---- Auto-refresh ----
-        // Initialize: fetch user first, then load data
+        // Initialize: fetch user first, then load data. The security
+        // status call has to wait for currentUser, because the per-user
+        // dismiss key is scoped by currentUser.id.
         fetchCurrentUser().then(() => {
+            refreshSecurityStatus();
             refreshStats();
             loadLastRefreshed();
             pollUpdateStatus();
