@@ -4375,6 +4375,7 @@
                 if (!res.ok) throw new Error('Failed to update auto_redirect_https');
                 const data = await res.json();
                 serverNetworkState.auto_redirect_https = data.auto_redirect_https ?? enabled;
+                refreshSecurityStatus();
             } catch (e) {
                 console.error(e);
                 if (toggle) toggle.checked = !enabled;
