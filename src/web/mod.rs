@@ -309,7 +309,7 @@ async fn mark_https_from_forwarded_proto_middleware(
         .headers()
         .get_all("x-forwarded-proto")
         .iter()
-        .last() // last value wins in proxy chains — the trusted proxy's value
+        .next_back() // last value wins in proxy chains — the trusted proxy's value
         .and_then(|v| v.to_str().ok())
         .map(|v| v.eq_ignore_ascii_case("https"))
         .unwrap_or(false);
