@@ -475,10 +475,12 @@ pub async fn run_web_server(
 
     let mut handles = Vec::new();
     let is_https_active = https_listen.is_some() && tls_config.is_some();
+    // Bind once and reuse. Always safe because both consumer branches are
+    // gated on is_https_active, which guarantees https_listen.is_some().
+    let https_addrs: &[String] = https_listen.unwrap_or(&[]);
 
     if is_https_active {
         let tls_cfg = tls_config.unwrap();
-        let https_addrs = https_listen.unwrap();
 
         // HTTPS app: full router + IsHttps marker
         let https_app = app
@@ -552,7 +554,6 @@ pub async fn run_web_server(
         // HTTP becomes redirect-only when HTTPS is active and auto_redirect_https is enabled.
         // Extract just the port from the HTTPS address — the redirect handler
         // uses the Host header from the request for the hostname.
-        let https_addrs = https_listen.unwrap();
         let https_port = https_addrs
             .first()
             .and_then(|addr| addr.rsplit_once(':').map(|(_, p)| p.to_string()))
@@ -586,7 +587,12 @@ pub async fn run_web_server(
             }));
         }
     } else {
-        // Normal HTTP mode (existing behavior)
+        // HTTP serves the full app. This branch covers two cases:
+        //   1. HTTPS not active at all (no https_listen or no TLS config)
+        //   2. HTTPS active but auto_redirect_https is off
+        // In case 2, sensitive endpoints are still protected by
+        // sensitive_https_middleware (Task 3), which blocks plain-HTTP
+        // requests to SENSITIVE_PATHS regardless of HTTPS state.
         for addr in listen {
             let app = app.clone();
             let sock_addr: std::net::SocketAddr = addr.parse()?;
