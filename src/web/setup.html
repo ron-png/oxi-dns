@@ -378,19 +378,24 @@
             const banner = document.getElementById('httpsRequiredBanner');
             if (!banner) return;
 
-            // Disable any forms on the page so the user can't submit
-            document.querySelectorAll('form').forEach(f => f.classList.add('form-disabled'));
-
-            // Try to find the HTTPS port
+            // Ask the server whether HTTPS enforcement is enabled. The
+            // auto_redirect_https toggle in Settings is the single source
+            // of truth — if it's off, we do nothing and let HTTP stand.
             let httpsPort = '9854';
+            let enforce = false;
             try {
                 const res = await fetch('/api/system/https-info', { credentials: 'include' });
                 if (res.ok) {
                     const data = await res.json();
                     if (data.https_port) httpsPort = data.https_port;
+                    enforce = !!data.auto_redirect_https;
                 }
-            } catch (_) { /* fall back to default */ }
+            } catch (_) { /* fall back: toggle assumed off */ }
 
+            if (!enforce) return;
+
+            // Enforcement on: disable forms and show the banner.
+            document.querySelectorAll('form').forEach(f => f.classList.add('form-disabled'));
             const url = `https://${window.location.hostname}:${httpsPort}${window.location.pathname}${window.location.search}`;
             document.getElementById('switchToHttpsBtn').href = url;
             banner.style.display = 'block';

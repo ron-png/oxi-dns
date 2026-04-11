@@ -332,10 +332,12 @@ const SENSITIVE_PATHS: &[&str] = &[
 ];
 
 async fn sensitive_https_middleware(
+    axum::extract::State(enforce): axum::extract::State<bool>,
     request: axum::extract::Request,
     next: axum::middleware::Next,
 ) -> Response {
-    if request.extensions().get::<IsHttps>().is_none()
+    if enforce
+        && request.extensions().get::<IsHttps>().is_none()
         && SENSITIVE_PATHS.iter().any(|p| request.uri().path() == *p)
     {
         return (
@@ -496,8 +498,12 @@ pub async fn run_web_server(
             auth_for_middleware,
             auth_middleware,
         ))
-        // Enforce HTTPS on sensitive endpoints
-        .layer(axum::middleware::from_fn(sensitive_https_middleware))
+        // Enforce HTTPS on sensitive endpoints — only when the
+        // auto_redirect_https toggle is on. When off, HTTP is allowed.
+        .layer(axum::middleware::from_fn_with_state(
+            auto_redirect_https,
+            sensitive_https_middleware,
+        ))
         // Security headers on all responses
         .layer(axum::middleware::from_fn(security_headers_middleware))
         .with_state(state);
@@ -744,6 +750,7 @@ async fn api_https_info(State(state): State<AppState>) -> Json<serde_json::Value
         });
     Json(serde_json::json!({
         "https_port": https_port,
+        "auto_redirect_https": config.web.auto_redirect_https,
     }))
 }
 
@@ -2986,7 +2993,10 @@ mod sensitive_https_middleware_tests {
     fn build_test_router() -> Router {
         Router::new()
             .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
-            .layer(axum::middleware::from_fn(sensitive_https_middleware))
+            .layer(axum::middleware::from_fn_with_state(
+                true,
+                sensitive_https_middleware,
+            ))
     }
 
     #[tokio::test]
@@ -3020,7 +3030,10 @@ mod sensitive_https_middleware_tests {
         // A path not in SENSITIVE_PATHS should pass through over HTTP
         let app = Router::new()
             .route("/api/stats", get(|| async { StatusCode::OK }))
-            .layer(axum::middleware::from_fn(sensitive_https_middleware));
+            .layer(axum::middleware::from_fn_with_state(
+                true,
+                sensitive_https_middleware,
+            ));
         let req = Request::builder()
             .method("GET")
             .uri("/api/stats")
@@ -3031,10 +3044,33 @@ mod sensitive_https_middleware_tests {
     }
 
     #[tokio::test]
+    async fn allows_http_to_sensitive_path_when_enforcement_disabled() {
+        // With the auto_redirect_https toggle off, HTTP to a sensitive path
+        // must pass through — the toggle is the single source of truth for
+        // HTTPS enforcement on the admin UI.
+        let app = Router::new()
+            .route("/api/auth/login", post(|| async { StatusCode::OK }))
+            .layer(axum::middleware::from_fn_with_state(
+                false,
+                sensitive_https_middleware,
+            ));
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/auth/login")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
     async fn forwarded_proto_https_is_trusted_when_middleware_present() {
         let app = Router::new()
             .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
-            .layer(axum::middleware::from_fn(sensitive_https_middleware))
+            .layer(axum::middleware::from_fn_with_state(
+                true,
+                sensitive_https_middleware,
+            ))
             .layer(axum::middleware::from_fn(
                 mark_https_from_forwarded_proto_middleware,
             ));
@@ -3053,7 +3089,10 @@ mod sensitive_https_middleware_tests {
     async fn forwarded_proto_http_is_not_trusted() {
         let app = Router::new()
             .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
-            .layer(axum::middleware::from_fn(sensitive_https_middleware))
+            .layer(axum::middleware::from_fn_with_state(
+                true,
+                sensitive_https_middleware,
+            ))
             .layer(axum::middleware::from_fn(
                 mark_https_from_forwarded_proto_middleware,
             ));
@@ -3072,7 +3111,10 @@ mod sensitive_https_middleware_tests {
     async fn forwarded_proto_absent_header_is_not_trusted() {
         let app = Router::new()
             .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
-            .layer(axum::middleware::from_fn(sensitive_https_middleware))
+            .layer(axum::middleware::from_fn_with_state(
+                true,
+                sensitive_https_middleware,
+            ))
             .layer(axum::middleware::from_fn(
                 mark_https_from_forwarded_proto_middleware,
             ));
@@ -3095,7 +3137,10 @@ mod sensitive_https_middleware_tests {
         // treated as HTTP and blocked.
         let app = Router::new()
             .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
-            .layer(axum::middleware::from_fn(sensitive_https_middleware))
+            .layer(axum::middleware::from_fn_with_state(
+                true,
+                sensitive_https_middleware,
+            ))
             .layer(axum::middleware::from_fn(
                 mark_https_from_forwarded_proto_middleware,
             ));
