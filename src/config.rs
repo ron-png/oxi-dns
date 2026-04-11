@@ -438,7 +438,10 @@ https_listen = ["0.0.0.0:9854"]
         let cfg: WebConfig = toml::from_str(toml_str).expect("parse");
         assert_eq!(cfg.listen, vec!["0.0.0.0:9853".to_string()]);
         assert_eq!(cfg.https_listen, Some(vec!["0.0.0.0:9854".to_string()]));
-        assert!(!cfg.auto_redirect_https, "auto_redirect_https defaults to false");
+        assert!(
+            !cfg.auto_redirect_https,
+            "auto_redirect_https defaults to false"
+        );
         assert!(
             !cfg.password_change_recommended,
             "password_change_recommended defaults to false"

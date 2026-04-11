@@ -175,9 +175,8 @@ async fn main() -> anyhow::Result<()> {
             }
         }
 
-        let (response_bytes, upstream_label) = resolved.ok_or_else(|| {
-            last_err.unwrap_or_else(|| anyhow::anyhow!("test query failed"))
-        })?;
+        let (response_bytes, upstream_label) = resolved
+            .ok_or_else(|| last_err.unwrap_or_else(|| anyhow::anyhow!("test query failed")))?;
         info!(
             "Health check: test query resolved via {} ({} bytes)",
             upstream_label,

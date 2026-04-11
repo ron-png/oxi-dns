@@ -309,7 +309,7 @@ async fn mark_https_from_forwarded_proto_middleware(
         .headers()
         .get_all("x-forwarded-proto")
         .iter()
-        .last()  // last value wins in proxy chains — the trusted proxy's value
+        .last() // last value wins in proxy chains — the trusted proxy's value
         .and_then(|v| v.to_str().ok())
         .map(|v| v.eq_ignore_ascii_case("https"))
         .unwrap_or(false);
@@ -576,7 +576,6 @@ pub async fn run_web_server(
                 }
             }));
         }
-
     }
 
     if is_https_active && auto_redirect_https {
@@ -1435,14 +1434,9 @@ async fn api_change_password(
                 if config.web.password_change_recommended {
                     config.web.password_change_recommended = false;
                     if let Err(e) = config.save(&state.config_path) {
-                        tracing::warn!(
-                            "Failed to clear password_change_recommended: {}",
-                            e
-                        );
+                        tracing::warn!("Failed to clear password_change_recommended: {}", e);
                     } else {
-                        tracing::info!(
-                            "Password changed — cleared password_change_recommended"
-                        );
+                        tracing::info!("Password changed — cleared password_change_recommended");
                     }
                 }
             }
@@ -2991,10 +2985,7 @@ mod sensitive_https_middleware_tests {
 
     fn build_test_router() -> Router {
         Router::new()
-            .route(
-                "/api/system/tls/upload",
-                post(|| async { StatusCode::OK }),
-            )
+            .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn(sensitive_https_middleware))
     }
 
@@ -3042,10 +3033,7 @@ mod sensitive_https_middleware_tests {
     #[tokio::test]
     async fn forwarded_proto_https_is_trusted_when_middleware_present() {
         let app = Router::new()
-            .route(
-                "/api/system/tls/upload",
-                post(|| async { StatusCode::OK }),
-            )
+            .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn(sensitive_https_middleware))
             .layer(axum::middleware::from_fn(
                 mark_https_from_forwarded_proto_middleware,
@@ -3064,10 +3052,7 @@ mod sensitive_https_middleware_tests {
     #[tokio::test]
     async fn forwarded_proto_http_is_not_trusted() {
         let app = Router::new()
-            .route(
-                "/api/system/tls/upload",
-                post(|| async { StatusCode::OK }),
-            )
+            .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn(sensitive_https_middleware))
             .layer(axum::middleware::from_fn(
                 mark_https_from_forwarded_proto_middleware,
@@ -3086,12 +3071,11 @@ mod sensitive_https_middleware_tests {
     #[tokio::test]
     async fn forwarded_proto_absent_header_is_not_trusted() {
         let app = Router::new()
-            .route(
-                "/api/system/tls/upload",
-                post(|| async { StatusCode::OK }),
-            )
+            .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn(sensitive_https_middleware))
-            .layer(axum::middleware::from_fn(mark_https_from_forwarded_proto_middleware));
+            .layer(axum::middleware::from_fn(
+                mark_https_from_forwarded_proto_middleware,
+            ));
 
         let req = Request::builder()
             .method("POST")
@@ -3110,18 +3094,17 @@ mod sensitive_https_middleware_tests {
         // authoritative one from the trusted proxy, so the request should be
         // treated as HTTP and blocked.
         let app = Router::new()
-            .route(
-                "/api/system/tls/upload",
-                post(|| async { StatusCode::OK }),
-            )
+            .route("/api/system/tls/upload", post(|| async { StatusCode::OK }))
             .layer(axum::middleware::from_fn(sensitive_https_middleware))
-            .layer(axum::middleware::from_fn(mark_https_from_forwarded_proto_middleware));
+            .layer(axum::middleware::from_fn(
+                mark_https_from_forwarded_proto_middleware,
+            ));
 
         let req = Request::builder()
             .method("POST")
             .uri("/api/system/tls/upload")
-            .header("x-forwarded-proto", "https")  // attacker-injected
-            .header("x-forwarded-proto", "http")   // trusted proxy appended
+            .header("x-forwarded-proto", "https") // attacker-injected
+            .header("x-forwarded-proto", "http") // trusted proxy appended
             .body(Body::empty())
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
